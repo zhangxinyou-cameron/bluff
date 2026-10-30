@@ -1,0 +1,16 @@
+{
+  "phrases": [
+    {"id":"hurry","text":"快点吧，我等到花儿都谢了！","audio":null},
+    {"id":"nice","text":"这手打得漂亮！","audio":null},
+    {"id":"coffee","text":"别急，喝杯咖啡慢慢想。","audio":null},
+    {"id":"bluff","text":"你这把是不是在偷鸡？","audio":null},
+    {"id":"lucky","text":"好运气，下一手再来！","audio":null},
+    {"id":"allin","text":"搏一搏，全押！","audio":null}
+  ],
+  "gifts": [
+    {"id":"tomato","label":"扔番茄","emoji":"🍅"},
+    {"id":"coffee","label":"送咖啡","emoji":"☕"},
+    {"id":"flower","label":"送鲜花","emoji":"🌹"},
+    {"id":"cheers","label":"碰个杯","emoji":"🍻"}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "bluff-private-poker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "THE RIVER 私人德扑牌桌，支持 2—8 人公网联机与概率人机",
+  "main": "server.js",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "test:experience": "node tests/experience-browser.js",
+    "test:table": "node tests/table-features-browser.js",
+    "test:ui": "node tests/ui-check.js",
+    "test:ai": "node tests/ai-simulation.js"
+  },
+  "dependencies": { "ws": "8.22.0" },
+  "devDependencies": { "playwright": "1.62.1" }
+}

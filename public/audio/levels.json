@@ -1,0 +1,71 @@
+{
+  "lounge-jazz.wav": {
+    "seconds": 53.333,
+    "sample_rate": 24000,
+    "peak_dbfs": -7.54,
+    "rms_dbfs": -22.87,
+    "clipped_samples": 0
+  },
+  "rain-jazz.wav": {
+    "seconds": 56.471,
+    "sample_rate": 24000,
+    "peak_dbfs": -7.54,
+    "rms_dbfs": -22.77,
+    "clipped_samples": 0
+  },
+  "moon-jazz.wav": {
+    "seconds": 51.892,
+    "sample_rate": 24000,
+    "peak_dbfs": -7.54,
+    "rms_dbfs": -23.48,
+    "clipped_samples": 0
+  },
+  "tap.wav": {
+    "seconds": 0.2,
+    "sample_rate": 24000,
+    "peak_dbfs": -15.92,
+    "rms_dbfs": -22.87,
+    "clipped_samples": 0,
+    "energy_above_2khz_percent": 0.0
+  },
+  "chips.wav": {
+    "seconds": 0.26,
+    "sample_rate": 24000,
+    "peak_dbfs": -15.92,
+    "rms_dbfs": -24.92,
+    "clipped_samples": 0,
+    "energy_above_2khz_percent": 0.0
+  },
+  "ready.wav": {
+    "seconds": 0.46,
+    "sample_rate": 24000,
+    "peak_dbfs": -15.92,
+    "rms_dbfs": -25.11,
+    "clipped_samples": 0,
+    "energy_above_2khz_percent": 0.0
+  },
+  "deal.wav": {
+    "seconds": 0.65,
+    "sample_rate": 24000,
+    "peak_dbfs": -15.92,
+    "rms_dbfs": -25.66,
+    "clipped_samples": 0,
+    "energy_above_2khz_percent": 0.0
+  },
+  "fold.wav": {
+    "seconds": 0.26,
+    "sample_rate": 24000,
+    "peak_dbfs": -15.92,
+    "rms_dbfs": -24.19,
+    "clipped_samples": 0,
+    "energy_above_2khz_percent": 0.0
+  },
+  "leave.wav": {
+    "seconds": 0.35,
+    "sample_rate": 24000,
+    "peak_dbfs": -15.92,
+    "rms_dbfs": -24.01,
+    "clipped_samples": 0,
+    "energy_above_2khz_percent": 0.0
+  }
+}

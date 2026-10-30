@@ -1,0 +1,28 @@
+# Runtime tools and installed dependencies stay on this machine.
+/node.exe
+/cloudflared.exe
+/node_modules/
+/*.zip
+
+# Local data and environment secrets are never versioned.
+/data/
+.env
+.env.*
+!.env.example
+*.log
+*.pid
+*.tmp
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+
+# Reproducible browser outputs (test scripts and verification notes are kept).
+/tests/screenshots/
+/tests/*-report.json
+/tests/voice-selfcheck.json
+/tests/voice-tone.wav
+/test-results/
+/playwright-report/
+.codex/
+.agents/

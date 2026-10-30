@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0c1716">
+<title>德州扑克·Texas Hold'em</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/table-layout.css">
+<link rel="stylesheet" href="/social.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">♠</span><div><span class="brand-name">THE RIVER</span><span class="brand-caption">PRIVATE POKER CLUB</span></div></div>
+  <div class="header-right">
+    <span class="online-label"><span class="online-dot"></span>好友之间，好牌相见</span>
+    <div class="sound-controls" aria-label="声音控制">
+      <button class="sound-button" id="musicToggle" aria-pressed="true" title="开启或关闭背景音乐">♫ 音乐</button>
+      <button class="sound-button" id="sfxToggle" aria-pressed="true" title="开启或关闭操作音效">♪ 音效</button>
+      <details class="sound-settings"><summary aria-label="调节声音音量">调音</summary><div class="sound-popover">
+        <div class="track-now"><span class="panel-kicker">LOUNGE SESSIONS</span><strong id="trackTitle">午夜河岸</strong><button id="nextTrackBtn" class="sound-button" title="切换下一首爵士乐">下一首 ↝</button></div>
+        <label for="musicVolume">背景音乐 <input id="musicVolume" type="range" min="0" max="100" value="28"></label>
+        <label for="sfxVolume">操作音效 <input id="sfxVolume" type="range" min="0" max="100" value="55"></label>
+        <div class="sound-note" id="audioStatus" role="status">首次操作后播放 · 慢拍爵士</div>
+      </div></details>
+      <form action="/auth/logout" method="post"><button class="sound-button" title="退出访问验证">退出</button></form>
+    </div>
+  </div>
+</header>
+<section id="connectionBanner" class="connection-banner" hidden role="status" aria-live="polite"><span id="connectionText"></span><button id="reconnectBtn" class="sound-button">重新同步</button></section>
+<section id="sessionToolbar" class="session-toolbar" hidden aria-label="本场规则和银行">
+  <div><span class="panel-kicker" id="sessionMode"></span><span id="sessionStatus" class="session-status" role="status"></span></div>
+  <div class="session-actions"><label class="mode-control">牌制 <select id="tableDeckMode" class="mini-select" onchange="RiverTable.setMode(this.value)"><option value="auto">自动人数</option><option value="short">36张短牌</option><option value="standard">52张标准</option></select></label><label class="mode-control">底注规则 <select id="tableBlindMode" class="mini-select" onchange="RiverTable.setBlinds(this.value)" title="可选全员底注，或庄家左手第一位1倍、第二位半倍"><option value="auto">默认：随牌制</option><option value="ante">全员底注＋庄家盲注</option><option value="position">下家1倍 / 下下家半倍</option></select></label><button id="avatarBtn" class="sound-button" onclick="RiverTable.openAvatar()" aria-haspopup="dialog">我的头像</button><button id="managePlayersBtn" class="sound-button" onclick="RiverTable.open()">玩家管理</button><button id="bankBtn" class="sound-button" onclick="openBank()" aria-haspopup="dialog">银行</button><button id="finishSessionBtn" class="sound-button" onclick="finishSession()">结算整局</button><button id="closeRoomBtn" class="sound-button" onclick="RiverSession.command('closeRoom')">关闭房间</button><button id="awayBtn" class="sound-button" onclick="RiverSession.leave()">暂时离桌</button></div>
+</section>
+<dialog id="bankDialog" class="bank-dialog" aria-labelledby="bankTitle">
+  <div class="bank-header"><div><div class="panel-kicker">TABLE BANK</div><h2 id="bankTitle">筹码银行</h2></div><button class="sound-button" onclick="document.getElementById('bankDialog').close()" aria-label="关闭银行">关闭</button></div>
+  <p class="bank-note">虚拟筹码，无利息。贷款即买入筹码，最终按筹码减去未还贷款排名。</p>
+  <div class="bank-balances"><div>现有筹码<strong id="bankChips">0</strong></div><div>未还贷款<strong id="bankDebt">0</strong></div><div>净筹码<strong id="bankNet">0</strong></div></div>
+  <label class="field-label" for="bankAmount">本次操作筹码</label><input id="bankAmount" class="room-code-input" type="number" min="1" step="1" inputmode="numeric" value="1000">
+  <div class="bank-actions"><button id="bankBorrowBtn" class="home-btn btn-create" onclick="submitBank('borrow')">贷款买入</button><button id="bankRepayBtn" class="home-btn btn-join" onclick="submitBank('repay')">归还贷款</button></div>
+  <p id="bankStatus" class="bank-note" role="status" aria-live="polite"></p><div class="panel-kicker">本场最近记录</div><div id="bankHistory" class="bank-history"></div>
+</dialog>
+<dialog id="socialDialog" class="social-dialog" aria-labelledby="socialTitle">
+  <header class="social-header"><div class="social-heading"><span class="social-emblem" aria-hidden="true">♠</span><div><span class="social-eyebrow">THE RIVER · FRIENDS AT THE TABLE</span><h2 id="socialTitle">牌桌互动<span>好牌，也要好气氛。</span></h2></div></div><button class="social-close" onclick="document.getElementById('socialDialog').close()" aria-label="关闭互动">×</button></header>
+  <div class="social-recipient"><span id="socialAvatar" class="social-avatar" aria-hidden="true">♠</span><div class="social-recipient-field"><label for="socialTarget">互动对象 <span id="socialPresence"></span></label><select id="socialTarget" onchange="RiverTable.targetChanged()"></select><span id="socialAudience">礼物将送到所选玩家座位</span></div></div>
+  <nav class="social-tabs" role="tablist" aria-label="互动类型"><button id="socialTabGifts" role="tab" data-social-tab="gifts" aria-controls="socialPanelGifts" aria-selected="true">送个心意</button><button id="socialTabPhrases" role="tab" data-social-tab="phrases" aria-controls="socialPanelPhrases" aria-selected="false" tabindex="-1">说句话</button><button id="socialTabPeek" role="tab" data-social-tab="peek" aria-controls="socialPanelPeek" aria-selected="false" tabindex="-1">看牌申请 <span id="socialRequestCount" hidden></span></button></nav>
+  <div class="social-body">
+    <section id="socialPanelGifts" role="tabpanel" aria-labelledby="socialTabGifts"><div class="social-section-heading"><h3>给这手牌一点回应</h3><span>免费互动</span></div><div class="gift-buttons" id="giftButtons"></div><p class="social-hint">选一份心意，送到对方的牌桌上。</p></section>
+    <section id="socialPanelPhrases" role="tabpanel" aria-labelledby="socialTabPhrases" hidden><div class="social-section-heading"><h3>牌桌上的熟悉台词</h3><span>发送给整桌</span></div><div id="phraseButtons" class="phrase-buttons"></div></section>
+    <section id="socialPanelPeek" role="tabpanel" aria-labelledby="socialTabPeek" hidden><div id="peekInbox"></div><div id="peekOutbox" class="peek-outbox" hidden></div><div class="peek-card"><div class="peek-card-heading"><span class="peek-card-icon" aria-hidden="true">♠<i>♥</i></span><div><h3>只向你亮牌</h3><p>由对方同意，其他玩家不可见。</p></div></div><div class="peek-controls"><label for="peekTip">自愿小费 <span>可填 0</span><div class="peek-tip-field"><input id="peekTip" type="number" min="0" step="1" value="0" inputmode="numeric"><span>筹码</span></div></label><button id="requestPeekBtn" onclick="RiverTable.requestPeek()">发送看牌申请 <span aria-hidden="true">↗</span></button></div><p id="peekHelp" class="social-hint"></p></div></section>
+    <details id="socialHostActions" class="social-moderation" hidden><summary>房主管理 <span>座位与玩家</span></summary><p>踢出后，对方将离开本房间。</p><button id="kickPlayerBtn" class="sound-button danger" onclick="RiverTable.kick()">踢出所选玩家</button></details>
+  </div>
+  <footer class="social-footer"><span id="socialFeedback" role="status" aria-live="polite">轻松互动，享受每一手好牌。</span><span class="social-footer-suits" aria-hidden="true">♠ ♥ ♣ ♦</span></footer>
+</dialog>
+<dialog id="avatarDialog" class="avatar-dialog" aria-labelledby="avatarTitle">
+  <header class="avatar-header"><div><span class="social-eyebrow">YOUR TABLE IDENTITY</span><h2 id="avatarTitle">选择你的头像</h2></div><button class="social-close" onclick="document.getElementById('avatarDialog').close()" aria-label="关闭头像选择">×</button></header>
+  <p class="avatar-note">挑一个喜欢的形象，整桌朋友都能看见。</p><div id="avatarChoices" class="avatar-choices"></div>
+</dialog>
+<dialog id="peekConsentDialog" class="peek-consent-dialog" aria-labelledby="peekConsentTitle" aria-describedby="peekConsentTip">
+  <span class="peek-consent-mark" aria-hidden="true">♠</span><span class="social-eyebrow">PRIVATE CARD REQUEST</span><h2 id="peekConsentTitle">有人想看看你的牌</h2>
+  <p id="peekConsentFrom"></p><p id="peekConsentTip" class="social-hint"></p><div class="peek-consent-time"><strong id="peekConsentSeconds">10</strong><span>秒内答复</span></div><div class="peek-consent-track" aria-hidden="true"></div>
+  <div class="peek-consent-actions"><button id="peekConsentDecline" class="peek-decline">婉拒</button><button id="peekConsentAccept" class="peek-accept">同意，仅向TA亮牌</button></div><p id="peekConsentQueue"></p>
+</dialog>
+<div id="turnNotice" class="turn-notice" popover="manual" hidden role="status" aria-live="assertive" aria-atomic="true"><span class="turn-notice-mark" aria-hidden="true">♠</span><div><span class="turn-notice-eyebrow">YOUR TURN</span><strong>轮到你了</strong><span id="turnNoticeDetail" class="turn-notice-detail"></span></div><span id="turnNoticeSeconds" class="turn-notice-seconds"></span></div>
+<details id="positionGuide" class="position-guide" hidden><summary>本桌位置与行动顺序</summary><div id="positionGuideContent"></div></details>
+<div class="container">
+
+  <!-- 首页 -->
+  <div id="homeScreen" class="home-screen">
+    <section class="home-story" aria-label="欢迎来到牌桌">
+      <div class="eyebrow">GOOD COMPANY. SLOW JAZZ.</div>
+      <h1 class="hero-title">落座。<br>好牌，<em>慢慢来。</em></h1>
+      <p class="hero-description">叫上熟悉的朋友，留一点时间给牌桌。<br>一副牌，一段爵士，一个轻松的夜晚。</p>
+      <div class="hero-art" aria-hidden="true"><div class="display-card first" data-suit="♠">A<span>♠</span></div><div class="display-card second" data-suit="♥">A<span>♥</span></div><div class="art-chip">100</div><span class="art-caption">A LITTLE LUCK. A LOT OF GOOD TIMES.</span></div>
+    </section>
+    <section class="home-panel" aria-label="创建或加入牌局">
+    <div class="panel-kicker">YOUR SEAT IS WAITING</div>
+    <div class="title">德州扑克</div>
+    <div class="subtitle">Texas Hold’em · 属于你们的私人牌局</div>
+    <label class="field-label" for="nameInput">牌桌上的称呼</label>
+    <input class="room-code-input" id="nameInput" placeholder="输入你的昵称" maxlength="8" autocomplete="nickname"/>
+    <button id="homeAvatarBtn" class="sound-button home-avatar-button" onclick="RiverTable.openAvatar()" aria-haspopup="dialog">选择头像</button>
+    <input class="room-code-input" id="roomCodeInput" placeholder="输入6位房间号" aria-label="6位房间号" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" style="display:none"/>
+    <button class="home-btn btn-create" id="createBtn">创建房间 <span aria-hidden="true">↗</span></button>
+    <button class="home-btn btn-join" id="joinBtn">加入朋友的牌局</button>
+    <button class="home-btn btn-create" id="confirmJoinBtn" style="display:none">确认加入</button>
+    <p class="panel-footnote">2—8 人同桌 · ≤4 人短牌 · ≥5 人标准德扑</p>
+    </section>
+  </div>
+
+  <!-- 等待房间 -->
+  <div id="waitScreen" class="wait-screen" style="display:none">
+    <div class="wait-header">
+      <div class="wait-title">牌局已就位 · 房间号</div>
+      <div class="room-code-display" id="displayRoomCode"></div>
+      <div class="share-link" id="shareLink" role="button" tabindex="0" title="复制房间链接"></div>
+      <p id="waitRuleSummary" class="wait-rule-summary"></p>
+    </div>
+
+    <!-- 房主设置 -->
+    <div class="settings-panel" id="settingsPanel" style="display:none">
+      <div class="setting-row">
+        <span class="setting-label">人数</span>
+        <div class="mini-counter">
+          <button class="mini-btn" onclick="changeMaxPlayers(-1)">-</button>
+          <span id="maxPlayersVal">4</span>
+          <button class="mini-btn" onclick="changeMaxPlayers(1)">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">牌制</span><select id="deckModeSel" class="mini-select" onchange="RiverTable.setMode(this.value)"><option value="auto">自动：≤4短牌 / ≥5标准</option><option value="short">36张短牌</option><option value="standard">52张标准德扑</option></select>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">底注规则</span><select id="blindModeSel" class="mini-select" onchange="RiverTable.setBlinds(this.value)" title="标准：SB半倍、BB1倍；自定义：下家1倍、再下家半倍"><option value="auto">默认：随牌制</option><option value="standard">标准：SB半倍 / BB1倍</option><option value="ante">全员底注＋庄家盲注</option><option value="position">自定义：下家1倍 / 再半倍</option></select>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">1 倍底注金额</span>
+        <select id="bigBlindSel" class="mini-select" onchange="onSettingsChange()">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">初始筹码</span>
+        <select id="initChipsSel" class="mini-select" onchange="onSettingsChange()">
+          <option value="1000">1000</option>
+          <option value="2000" selected>2000</option>
+          <option value="5000">5000</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">允许买入</span>
+        <select id="allowBuyInSel" class="mini-select" onchange="onSettingsChange()"><option value="no" selected>否 · 淘汰赛</option><option value="yes">是 · 银行无限场</option></select>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">最少剩余</span>
+        <select id="minPlayersSel" class="mini-select" onchange="onSettingsChange()">
+          <option value="1">1人（决出冠军）</option>
+          <option value="2" selected>2人</option>
+          <option value="3">3人</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="seats" id="seats"></div>
+    <button class="wait-btn btn-ready" id="readyBtn">准备</button>
+    <button class="wait-btn btn-start" id="startBtn" style="display:none">开始游戏</button>
+    <button class="wait-btn btn-leave" id="leaveBtn">离开房间</button>
+    <div class="wait-tip" id="waitTip" role="status" aria-live="polite">等待玩家加入...</div>
+  </div>
+
+  <!-- 游戏界面 -->
+  <div id="playWorkspace" class="play-workspace">
+  <div id="gameScreen" class="game-screen">
+    <div class="top-bar">
+      <span class="hand-num" id="handNum"></span>
+      <span class="phase-text" id="phaseText"></span>
+      <span class="pot-text" id="potText"></span><button id="tableSocialBtn" class="sound-button" onclick="RiverTable.open()">互动 <span id="peekBadge"></span></button>
+    </div>
+    <div class="table">
+      <div id="rulesBadge" class="rules-badge"></div><div id="reactionLayer" class="reaction-layer" aria-hidden="true"></div>
+      <div id="dealingStage" class="dealing-stage" hidden aria-live="polite"></div>
+      <div class="players-top" id="playersTop"></div>
+      <div class="table-center">
+        <div class="community-cards" id="communityCards"></div>
+        <div class="pot-display" id="potDisplay"></div>
+        <div id="actionAnnouncement" class="action-announcement" role="status" aria-live="polite"></div>
+      </div>
+      <div class="players-bottom" id="playersBottom"></div>
+    </div>
+    <div class="hand-info-bar" id="handInfoBar" style="display:none"><span class="hand-type" id="handTypeText"></span><span class="win-rate" id="winRateText"></span></div>
+    <div class="turn-cue" id="turnCue"><div id="turnSeconds" class="turn-seconds"></div><div class="action-hint" id="actionHint"></div><i id="turnProgress"></i></div>
+    <div class="action-panel" id="actionPanel"></div>
+    <div id="runoutPanel" class="runout-panel" hidden></div>
+
+  </div>
+
+  <!-- 结算 -->
+  <div id="resultScreen" class="result-screen">
+    <div class="result-card">
+      <div class="result-title">✨ 本局结束</div>
+      <div class="winners"><span class="winner-label">底池分配</span><div class="pot-breakdown" id="winnerNames" aria-live="polite"></div></div>
+      <div class="community-result">
+        <span class="result-label">公共牌:</span>
+        <div class="result-cards" id="resultCommunity"></div>
+      </div>
+      <div class="player-results" id="playerResults"></div>
+      <div class="next-hand-panel"><div class="panel-kicker">ONE MORE HAND?</div><p id="nextHandStatus" class="next-hand-status" role="status" aria-live="polite"></p><div id="nextHandPlayers" class="confirmation-list"></div>
+      <button class="action-next" id="nextHandBtn" onclick="nextHand()">确认下一局</button></div>
+    </div>
+  </div>
+
+  <section id="activityPanel" class="activity-panel" hidden aria-label="本场聊天和牌局记录">
+    <div class="activity-header"><span id="historyCount">本场记录</span><div class="history-tools"><select id="historyFilter" class="mini-select" aria-label="记录类型"><option value="all">全部记录</option><option value="game">牌局记录</option><option value="chat">聊天</option></select><button id="exportHistoryBtn" class="sound-button">导出</button></div></div>
+    <button id="loadEarlierBtn" class="sound-button" hidden>加载更早记录</button>
+    <div class="chat-box" id="chatBox"></div>
+    <div class="chat-quick" id="chatQuick"></div><button class="sound-button pack-open" id="phraseOpenBtn" onclick="RiverTable.open()">语言包 · 表情互动</button>
+    <div class="chat-input-row">
+      <input class="chat-input" id="chatInput" placeholder="说点什么..." onkeydown="if(event.key==='Enter')sendChat()"/>
+      <button class="chat-send" onclick="sendChat()">发送</button>
+    </div>
+  </section>
+  </div>
+
+</div>
+<footer class="site-footer"><span>THE RIVER <span class="footer-suits">♠ ♥ ♣ ♦</span></span><span>放慢节奏，享受每一手好牌。 · 仅供好友娱乐</span></footer>
+<script src="/audio.js" defer></script>
+<script src="/session-client.js" defer></script>
+<script src="/table-ui.js" defer></script>
+<script src="/poker-engine.js"></script>
+<script src="/avatars.js"></script>
+
+<script>
+// ========== 常量 ==========
+const SUITS = ['♠','♥','♣','♦'];
+const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const HAND_NAMES = {10:'皇家同花顺',9:'同花顺',8:'四条',7:'葫芦',6:'同花',5:'顺子',4:'三条',3:'两对',2:'一对',1:'高牌'};
+const PHASE_NAMES = {waiting:'等待',pre_flop:'翻牌前',flop:'翻牌',turn:'转牌',river:'河牌',runout_vote:'全押协商',showdown:'摊牌',hand_over:'结束'};
+const QUICK_CHATS = ['拿到大牌了，快跑！','这牌我梭了！','跟注，看看你的牌','哇，又是皇家同花顺？','不送了，弃','river太骚了','下把我必赢','你这牌也敢跟？'];
+
+// ========== 联机状态 ==========
+let ws = null;
+let wsConnected = false;
+let connectionTimer = null;
+let isHost = false;
+let mySeatId = -1;
+let roomCode = '';
+let myName = '玩家' + Math.floor(Math.random()*100);
+let seats = [];        // 座位列表 [{id, name, isHost, ready}]
+var g = null;         // 服务器提供给房主的安全快照；访客使用 clientGameState
+let clientGameState = null; // client收到的游戏状态
+let chatMessages = [];
+let maxPlayers = 4;
+let aiSlots = {};
+let settings = { bigBlind: 20, initChips: 2000, minPlayers: 2, allowBuyIn:false };
+let raiseMode = false, raiseValue = 0;
+let actionPending = false;
+let aiTimer = null;
+let bankPending = false;
+let bankRequestSequence = 0;
+let bankNotice = '';
+
+// ========== 牌型庄擎 ==========
+const { createDeck, shuffle, getCombos, eval5, evalBest, cmpHand } = PokerEngine;
+
+// ========== 牌型与界面辅助计算（游戏状态由服务器托管） ==========
+
+// 蒙特卡洛胜率
+const winRateCache = new Map();
+function calcWinRate(myCards, commCards, numOpp, variant='standard') {
+  if (numOpp <= 0) return 100;
+  const key = variant+'/'+myCards.map(c=>c.id).sort((a,b)=>a-b).join(',') + '/' + commCards.map(c=>c.id).join(',') + '/' + numOpp;
+  if (winRateCache.has(key)) return winRateCache.get(key);
+  const used = new Set();
+  myCards.forEach(c => used.add(c.id));
+  commCards.forEach(c => used.add(c.id));
+  const rest = [];
+  for (let s=0;s<4;s++) for (let r=variant==='short'?6:2;r<=14;r++) {
+    const id = s*13+(r-2);
+    if (!used.has(id)) rest.push({suit:s, rank:r, id});
+  }
+  const need = 5 - commCards.length;
+  const sims = 100;
+  let wins = 0, ties = 0;
+  for (let sim=0; sim<sims; sim++) {
+    const sh = shuffle(rest);
+    const comm = [...commCards, ...sh.slice(0, need)];
+    const myRes = evalBest([...myCards, ...comm],variant);
+    let bestOpp = null, tied=0;
+    for (let o=0; o<numOpp; o++) {
+      const oppCards = [sh[need+o*2], sh[need+o*2+1]];
+      const oppRes = evalBest([...oppCards, ...comm],variant);
+      if (!bestOpp || cmpHand(oppRes, bestOpp) > 0) bestOpp = oppRes;
+      if(cmpHand(myRes,oppRes)===0)tied++;
+    }
+    if (cmpHand(myRes, bestOpp) > 0) wins++;
+    else if (cmpHand(myRes, bestOpp) === 0) ties+=1/(tied+1);
+  }
+  const result = Math.round((wins + ties) / sims * 100);
+  if (winRateCache.size >= 64) winRateCache.delete(winRateCache.keys().next().value);
+  winRateCache.set(key, result);
+  return result;
+}
+
+function startNewHand() { raiseMode = false; return PokerEngine.startHand(g); }
+
+// ========== 联机同步 ==========
+function broadcast(msg) {
+  // 房主通过WebSocket发送给服务器，服务器中继
+  if (isHost && wsConnected) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+function broadcastSeats() {
+  broadcastSeatsAll();
+  renderSeats();
+}
+
+function startGameHost() {
+  if (g) return;
+  g = { players: [] };
+  // 真人玩家
+  seats.forEach((s, i) => {
+    if (!s) return;
+    g.players.push({ id: i, name: s.name, chips: settings.initChips, holeCards: [], currentBet: 0, totalBet: 0, folded: false, allIn: false, isActive: true, isAI: !!s.isAI, handResult: null, chipsBeforeHand: settings.initChips, peerId: s.id });
+  });
+  // 人机玩家
+  const aiNames = ['Alpha','Beta','Gamma','Delta','Omega','Sigma'];
+  let aiIdx = 0;
+  for (let i = 0; i < maxPlayers; i++) {
+    if (!seats[i] && aiSlots[i]) {
+      g.players.push({ id: i, name: aiNames[aiIdx%aiNames.length], chips: settings.initChips, holeCards: [], currentBet: 0, totalBet: 0, folded: false, allIn: false, isActive: true, isAI: true, handResult: null, chipsBeforeHand: settings.initChips, peerId: 'ai-'+i });
+      aiIdx++;
+    }
+  }
+  if (g.players.length < 2) { g = null; return; }
+  g = PokerEngine.createGame(g.players, settings.bigBlind, {allowBuyIn:settings.allowBuyIn,hostSeatId:mySeatId});
+  startNewHand();
+  broadcastGameState('gameStart');
+  showGameScreen();
+  renderGame(g);
+  // 让AI行动
+  scheduleAI();
+}
+
+function serializeGame(g, viewerId) {
+  if (viewerId === undefined) viewerId = mySeatId;
+  const showAllCards = (g.phase === 'hand_over' || g.phase === 'showdown');
+  return {
+    handNumber: g.handNumber,
+    phase: g.phase,
+    pot: g.pot,
+    currentBet: g.currentBet,
+    dealerIndex: g.dealerIndex,
+    currentPlayerIndex: g.currentPlayerIndex,
+    communityCards: g.communityCards,
+    minRaise: g.minRaise,
+    bigBlind: g.bigBlind,
+    revision: g.revision,
+    nextHandReady: g.nextHandReady,
+    winners: g.winners,
+    pots: g.pots,
+    allowBuyIn: g.allowBuyIn,
+    endRequested: g.endRequested,
+    bankLog: g.bankLog,
+    bankSequence: g.bankSequence,
+    players: g.players.map(p => ({
+      id: p.id, name: p.name, chips: p.chips, currentBet: p.currentBet,
+      folded: p.folded, allIn: p.allIn, isActive: p.isActive,
+      handResult: p.handResult, acted: p.acted,
+      canRaise: PokerEngine.canRaise(g, p),
+      disconnected: !!p.disconnected,
+      isAI: !!p.isAI,
+      chipsBeforeHand: p.chipsBeforeHand,
+      chipsAfterHand: p.chipsAfterHand,
+      initialChips:p.initialChips,bankDebt:p.bankDebt,totalBorrowed:p.totalBorrowed,totalRepaid:p.totalRepaid,bankVersion:p.bankVersion,
+      eliminatedHand: p.eliminatedHand,
+      eliminationStack: p.eliminationStack,
+      showFolded: p.showFolded || false,
+      // 结算时：未弃牌玩家亮牌；弃牌玩家默认不亮，除非主动选择
+      // 游戏中：只发自己的牌
+      holeCards: (showAllCards && (!p.folded || p.showFolded)) ? p.holeCards : (p.id === viewerId ? p.holeCards : [])
+    }))
+  };
+}
+
+// 给每个玩家单独发（只发他自己的底牌）
+function broadcastGameState(msgType) {
+  msgType = msgType || 'state';
+  // 房主发送给服务器，服务器中继给所有房客
+  // 每个房客需要不同的底牌，用p.id作为targetSeat和viewerId
+  if (!isHost || !wsConnected) return;
+  g.players.forEach((p) => {
+    if (p.id === mySeatId || p.isAI) return; // 跳过房主和人机
+    ws.send(JSON.stringify({ type: msgType, targetSeat: p.id, game: serializeGame(g, p.id) }));
+  });
+}
+
+// ========== UI渲染 ==========
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function rankClass(rank) { if (rank>=13) return 'rank-high'; if (rank>=10) return 'rank-mid'; return 'rank-low'; }
+function fmtCard(c) {
+  return `<div class="card suit-${c.suit} ${rankClass(c.rank)}"><span class="card-suit">${SUITS[c.suit]}</span><span class="card-rank">${RANKS[c.rank-2]}</span></div>`;
+}
+function fmtCardSmall(c) {
+  return `<div class="card small suit-${c.suit} ${rankClass(c.rank)}"><span class="card-suit">${SUITS[c.suit]}</span><span class="card-rank">${RANKS[c.rank-2]}</span></div>`;
+}
+
+function renderSeats() {
+  document.getElementById('waitRuleSummary').textContent=settings.allowBuyIn?'银行无限场 · 可贷款买入，无破产淘汰，房主主动结算 · 净筹码排名':'淘汰赛 · 不允许中途买入，按筹码及出局先后排名';
+  let html = '';
+  for (let i = 0; i < maxPlayers; i++) {
+    const s = seats[i];
+    if (s) {
+      html += `<div class="seat ${s.ready?'ready':''}">
+        <div class="seat-avatar">${typeof RiverAvatars!=='undefined'?RiverAvatars.markup(s.avatar,s.name):s.isAI?'🤖':'♠'}</div>
+        <div class="seat-name">${escapeHtml(s.name)}</div>
+        <div class="seat-status">${s.isHost?'房主':''} ${s.isAI?'人机':''} ${s.connected===false?'暂离 · 席位保留':s.ready?'✅已准备':'⏳未准备'}</div>
+      </div>`;
+    } else {
+      const isAI = aiSlots[i];
+      if (isHost) {
+        html += `<div class="seat" role="button" tabindex="0" aria-label="${isAI?'移除人机':'添加人机'}" onclick="toggleAI(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+          <div class="seat-avatar">${isAI?'🤖':'➕'}</div>
+          <div class="seat-name">${isAI?'人机':'空位'}</div>
+          <div class="seat-status">${isAI?'点击移除':'点击设为人机'}</div>
+        </div>`;
+      } else {
+        html += `<div class="seat" style="opacity:0.4">
+          <div class="seat-avatar">${isAI?'🤖':'➕'}</div>
+          <div class="seat-name">${isAI?'人机':'空位'}</div>
+          <div class="seat-status">${isAI?'等待开始':'等待加入'}</div>
+        </div>`;
+      }
+    }
+  }
+  document.getElementById('seats').innerHTML = html;
+  if (isHost) {
+    const humanSeats = seats.filter(s => s && !s.isAI && s.connected!==false);
+    const allHumanReady = humanSeats.every(s => s.ready || s.isHost);
+    const totalPlayers = seats.filter(s=>s&&s.connected!==false).length + Object.keys(aiSlots).filter(k=>aiSlots[k] && !seats[k]).length;
+    document.getElementById('startBtn').style.display = (wsConnected && allHumanReady && totalPlayers >= 2) ? 'block' : 'none';
+  }
+  const readyBtn = document.getElementById('readyBtn');
+  const seat = seats[mySeatId];
+  readyBtn.disabled = !wsConnected || !seat || !!seat.ready;
+  readyBtn.textContent = seat && seat.ready ? '✅ 已准备' : '准备';
+}
+
+function toggleAI(idx) {
+  if (!isHost) return;
+  aiSlots[idx] = !aiSlots[idx];
+  broadcastSettings();
+  renderSeats();
+}
+
+function showGameScreen() {
+  document.getElementById('homeScreen').style.display = 'none';
+  document.getElementById('waitScreen').style.display = 'none';
+  document.getElementById('gameScreen').style.display = 'flex';
+  document.getElementById('resultScreen').style.display = 'none';
+  renderChat();
+}
+
+function tableSeatRows(players) {
+  // A single clockwise ring for every viewer: top L→R, then bottom R→L.
+  const split=Math.ceil(players.length/2);
+  return [players.slice(0,split),players.slice(split).reverse()];
+}
+
+function potRaisePresets(game,player) {
+  const call=Math.max(0,game.currentBet-player.currentBet),potAfterCall=game.pot+Math.min(call,player.chips);
+  const min=game.currentBet+game.minRaise,max=player.currentBet+player.chips;
+  return [[.5,'半池'],[.75,'¾池'],[1,'满池'],[2,'双倍底池']].map(([fraction,label])=>({fraction,label,amount:Math.min(max,Math.max(min,Math.round(game.currentBet+potAfterCall*fraction)))}));
+}
+
+function renderGame(g) {
+  updateSessionTools(g);
+  const myPosition=g.players.find(p=>p.id===mySeatId)?.position;
+  document.getElementById('handNum').textContent = `第${g.handNumber}局${myPosition?' · '+myPosition.label:''}`;
+  document.getElementById('phaseText').textContent = PHASE_NAMES[g.phase]||'';
+  document.getElementById('potText').textContent = `底池: ${g.pot}`;
+  document.getElementById('potDisplay').textContent = `底池 ${g.pot}`;
+
+  let ccHtml = '';
+  g.communityCards.forEach(c => ccHtml += fmtCard(c));
+  for (let i=0; i<5-g.communityCards.length; i++) ccHtml += `<div class="card card-empty"></div>`;
+  document.getElementById('communityCards').innerHTML = ccHtml;
+
+  const seatHtml=new Map();
+  g.players.forEach((p, idx) => {
+    let cardsHtml='';
+    // The server filters all private cards, including consent-based reveals.
+    if(p.holeCards?.length===2)p.holeCards.forEach(c=>cardsHtml+=fmtCard(c));
+    else if(!p.folded)cardsHtml='<div class="card card-back"></div><div class="card card-back"></div>';
+    const cls = `player-card ${p.id===mySeatId?'is-self':''} ${p.folded?'folded':''} ${g.currentPlayerIndex===idx?'active':''} ${p.allIn?'allin':''}`;
+    if(g.dealing&&p.isActive)cardsHtml='<div class="card card-back"></div><div class="card card-back"></div>';
+    if(!p.isActive)cardsHtml=`<span class="sitting-out">${p.disconnected?'已退桌':p.chips>0?'本手旁观 · 下手加入':g.allowBuyIn?'待买入 · 观战':'已出局'}</span>`;
+    let html = `<div class="${cls}" data-seat="${p.id}" role="button" tabindex="0" aria-label="与${escapeHtml(p.name)}互动" onclick="RiverTable.open(${p.id})" onkeydown="if(event.key==='Enter')RiverTable.open(${p.id})">`;
+    if (idx === g.dealerIndex) html += `<div class="dealer-btn">庄</div>`;
+    if(p.id===mySeatId)html+='<span class="self-seat-label">你</span>';
+    const position=p.position;
+    html += `<div class="player-name">${typeof RiverAvatars!=='undefined'?RiverAvatars.markup(p.avatar,p.name):`<span class="player-avatar" data-avatar="default">${p.isAI?'🤖':'♠'}</span>`}<span class="player-label" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span></div><div class="player-chips">${position?`<span class="player-position" title="${escapeHtml(position.description)} · 翻前第${position.preflop}位 / 翻后第${position.postflop}位">${escapeHtml(position.label)}</span>`:''}<span>💰${p.chips}</span></div>`;
+    html += `<div class="player-action move-${escapeHtml(p.lastAction?.action||'waiting')}">${p.lastAction?escapeHtml(p.lastAction.label):'尚未行动'}${p.connected===false?' · 暂离':''}</div>`;
+    if (p.currentBet>0) html += `<div class="player-bet">贡献:${p.currentBet}</div>`;
+    if (p.folded) html += `<div class="fold-tag">弃牌</div>`;
+    if (p.allIn) html += `<div class="allin-tag">全押</div>`;
+    html += `<div class="hole-cards">${cardsHtml}</div>${p.privateReveal&&p.id!==mySeatId?'<span class="private-card-note">仅向你亮牌</span>':''}</div>`;
+    seatHtml.set(p.id,html);
+  });
+  const rows=tableSeatRows(g.players);
+  document.getElementById('playersTop').innerHTML = rows[0].map(p=>seatHtml.get(p.id)).join('');
+  document.getElementById('playersBottom').innerHTML = rows[1].map(p=>seatHtml.get(p.id)).join('');
+
+  // 牌型+胜率提示
+  const infoBar = document.getElementById('handInfoBar');
+  const cp0 = g.players.find(p=>p.id===mySeatId);
+  if (cp0 && !cp0.folded && cp0.holeCards && cp0.holeCards.length > 0 && g.phase !== 'hand_over') {
+    let hType = '', wRate = '';
+    if (g.communityCards.length >= 3) {
+      const hr = evalBest([...cp0.holeCards, ...g.communityCards],g.variant);
+      if (hr) hType = `当前: ${hr.name}`;
+      const opps = g.players.filter(p => p.isActive && !p.folded).length - 1;
+      if (opps > 0) wRate = `胜率: ${calcWinRate(cp0.holeCards, g.communityCards, opps,g.variant)}%`;
+    } else {
+      hType = '起手牌评估中...';
+      const opps = g.players.filter(p => p.isActive && !p.folded).length - 1;
+      wRate = opps>0?`估计胜率 ${calcWinRate(cp0.holeCards,[],opps,g.variant)}%`:'胜率 100%';
+    }
+    infoBar.style.display = 'flex';
+    document.getElementById('handTypeText').textContent = hType;
+    document.getElementById('winRateText').textContent = wRate;
+  } else {
+    infoBar.style.display = 'flex';document.getElementById('handTypeText').textContent=cp0?.folded&&cp0.holeCards.length===2?'本手已弃牌 · 可申请看牌':cp0?.chips>0?'本手旁观 · 下一手可加入':'等待下一手';document.getElementById('winRateText').textContent='';
+  }
+
+  // 操作按钮
+  const cp = g.players.find(p=>p.id===mySeatId);
+  const panel = document.getElementById('actionPanel');
+  if (!wsConnected) {
+    panel.innerHTML = '';
+    document.getElementById('actionHint').textContent = '连接已断开，请重新加入房间';
+    return;
+  }
+  if (!PokerEngine.betting(g) || !cp || !cp.isActive || cp.folded || cp.allIn || g.players[g.currentPlayerIndex]?.id !== mySeatId) {
+    panel.innerHTML = '';
+    document.getElementById('actionHint').textContent = !PokerEngine.betting(g) ? '' : `轮到 ${g.players[g.currentPlayerIndex]?.name || '其他玩家'} 行动`;
+    return;
+  }
+  const need = g.currentBet - cp.currentBet;
+  const canCheck = need === 0;
+  if (actionPending) {
+    panel.innerHTML = '';
+    document.getElementById('actionHint').textContent = '操作已发送，等待房主确认...';
+    return;
+  }
+  const raiseAllowed = cp.canRaise;
+  const canRaise = raiseAllowed && cp.chips + cp.currentBet >= g.currentBet + g.minRaise;
+  if(raiseMode&&!canRaise)raiseMode=false;
+
+  if (raiseMode) {
+    // 加注滑杆
+    const minT = g.currentBet + g.minRaise;
+    const maxT = cp.chips + cp.currentBet;
+    if (raiseValue < minT) raiseValue = minT;
+    if (raiseValue > maxT) raiseValue = maxT;
+    const presets=potRaisePresets(g,cp);
+    let html = `<div class="raise-slider"><div class="raise-presets">${presets.map(({fraction,label,amount})=>`<button class="sound-button" data-pot-fraction="${fraction}" title="先跟注后，按底池 ${Math.round(fraction*100)}% 加注；受最小加注和筹码限制" onclick="RiverTable.raiseTo(${amount})"><span>${label}</span><small>至 ${amount}</small></button>`).join('')}</div><label class="raise-amount">加注至 <input id="raiseAmount" type="number" min="${minT}" max="${maxT}" value="${raiseValue}" inputmode="numeric" oninput="RiverTable.raiseInput(this.value)"></label>
+      <input type="range" min="${minT}" max="${maxT}" value="${raiseValue}"
+        oninput="raiseValue=parseInt(this.value);document.getElementById('raiseAmount').value=raiseValue;"/>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button class="action-btn action-cancel" onclick="cancelRaise()">取消</button>
+        <button class="action-btn action-confirm" onclick="confirmRaise()">确认</button>
+      </div></div>`;
+    panel.innerHTML = html;
+    return;
+  }
+
+  let html = `<div class="action-row"><button class="action-btn action-fold" onclick="playerAction('fold')">弃牌</button>`;
+  if (canCheck) html += `<button class="action-btn action-check" onclick="playerAction('check')">过牌</button>`;
+  else html += `<button class="action-btn action-call" onclick="playerAction('call')">跟注 ${Math.min(need,cp.chips)}</button>`;
+  html += `</div><div class="action-row">`;
+  if (canRaise) html += `<button class="action-btn action-raise" onclick="startRaise()">加注至 ${g.currentBet+g.minRaise}</button>`;
+  if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" onclick="playerAction('allin')">全押 ${cp.chips}</button>`;
+  html += '</div>';
+  panel.innerHTML = html;
+  document.getElementById('actionHint').textContent = `轮到你了`;
+}
+
+function showResultScreen(g) {
+  updateSessionTools(g);
+  document.getElementById('gameScreen').style.display = 'none';
+  document.getElementById('resultScreen').style.display = 'flex';
+  document.getElementById('winnerNames').innerHTML = g.pots.map((pot,index)=>{
+    const label=index===0?'主池':g.pots.length===2?'边池':`边池 ${index}`;
+    const awards=pot.awards.map(award=>`${escapeHtml(g.players.find(p=>p.id===award.seatId)?.name||'玩家')} ${pot.awards.length>1?'分得':'赢'}${label} <strong>${award.amount}</strong>`).join('、');
+    const runs=pot.boards?pot.boards.map(run=>`<small>第 ${run.index+1} 组：${run.awards.map(a=>escapeHtml(g.players.find(p=>p.id===a.seatId)?.name)+' '+a.amount).join('、')}</small>`).join(''):'';
+    return `<div class="pot-allocation">${awards}${runs}</div>`;
+  }).join('');
+  let ccHtml='';
+  if(g.runoutBoards)ccHtml=g.runoutBoards.map((board,i)=>`<div class="board-result"><small>第 ${i+1} 组</small>${board.map(fmtCard).join('')}</div>`).join('');
+  else g.communityCards.forEach(c=>ccHtml+=fmtCard(c));
+  document.getElementById('resultCommunity').innerHTML=ccHtml;
+  let prHtml='';
+  g.players.forEach(p => {
+    const net = (p.chipsAfterHand ?? p.chips) - (p.chipsBeforeHand ?? p.chips);
+    prHtml += `<div class="player-result-row"><span class="pr-name">${escapeHtml(p.name)}</span><div class="pr-cards">`;
+    // 显示牌：有holeCards数据就显示（未弃牌自动亮牌，弃牌选择亮牌后也显示）
+    if (p.holeCards && p.holeCards.length === 2) {
+      p.holeCards.forEach(c=>prHtml+=fmtCardSmall(c));
+    } else if (p.folded) {
+      prHtml += `<span style="font-size:10px;color:#888;margin:0 4px;">弃牌</span>`;
+    }
+    prHtml += `</div><span class="pr-hand">${p.handResult?p.handResult.name:(p.folded?'已弃牌':'-')}</span><span class="pr-net ${net>=0?'win':'lose'}">${net>=0?'+':''}${net}</span><span class="pr-chips">💰${p.chips}</span>`;
+    // 弃牌玩家且是自己：加亮牌按钮
+    if (p.folded && p.id === mySeatId) {
+      prHtml += ` <button class="action-btn" style="padding:2px 6px;font-size:10px;" onclick="toggleShowFolded()">${p.showFolded?'隐藏牌':'亮牌'}</button>`;
+    }
+    prHtml += `</div>`;
+  });
+  document.getElementById('playerResults').innerHTML = prHtml;
+  const nextBtn = document.getElementById('nextHandBtn');
+  const humans = PokerEngine.confirmationPlayers(g);
+  const confirmed = g.nextHandReady || [];
+  const finished = tournamentFinished(g);
+  const mine = confirmed.includes(mySeatId);
+  nextBtn.style.display = finished && !isHost ? 'none' : 'block';
+  nextBtn.disabled = !finished && mine;
+  nextBtn.textContent = finished ? '查看最终排名' : mine ? '已确认 · 等待其他玩家' : '确认下一局';
+  document.getElementById('nextHandStatus').textContent = finished ? isHost?'本场已结束，点击下方按钮向所有玩家公布最终排名。':'本场已结束，等待房主公布排名…' : `下一局需要所有在线玩家确认 · ${humans.filter(p=>confirmed.includes(p.id)).length}/${humans.length}`;
+  if(g.allowBuyIn) {
+    const funded=g.players.filter(p=>!p.disconnected&&p.connected!==false&&(p.chips>0||p.isAI)).length;
+    const minePlayer=g.players.find(p=>p.id===mySeatId);
+    document.getElementById('nextHandStatus').textContent=funded<2?'至少需要两名有筹码的玩家，请先到银行买入。':`银行无限场 · 所有在线玩家确认后继续 · ${humans.filter(p=>confirmed.includes(p.id)).length}/${humans.length}`;
+    if(!mine&&minePlayer?.chips===0)nextBtn.textContent='确认观战下一局 · 也可先到银行买入';
+  }
+  document.getElementById('nextHandPlayers').innerHTML = humans.map(p=>`<span class="confirmation-person ${confirmed.includes(p.id)?'confirmed':''}">${confirmed.includes(p.id)?'✓':'○'} ${escapeHtml(p.name)}</span>`).join('');
+  if(!finished&&g.players.filter(p=>!p.disconnected&&p.connected!==false&&(p.chips>0||(g.allowBuyIn&&p.isAI))).length<2)document.getElementById('nextHandStatus').textContent=g.allowBuyIn?'至少需要两名在线且有筹码的玩家，请等待重连或先到银行买入。':'至少需要两名在线且有筹码的玩家，请等待其他玩家恢复连接。';
+}
+
+function toggleShowFolded() {
+  if (isHost) {
+    const p = g.players.find(p=>p.id===mySeatId);
+    p.showFolded = !p.showFolded;
+    broadcastGameState('result');
+    showResultScreen(g);
+  } else {
+    ws.send(JSON.stringify({ type:'showFolded', seatId: mySeatId }));
+  }
+}
+
+function startRaise() {
+  const g = isHost ? window.g : clientGameState;
+  raiseValue = g.currentBet + g.minRaise;
+  raiseMode = true;
+  renderGame(g);
+}
+function cancelRaise() {
+  raiseMode = false;
+  const g = isHost ? window.g : clientGameState;
+  renderGame(g);
+}
+function confirmRaise() {
+  raiseMode = false;
+  if (isHost) {
+    doRaiseHost(mySeatId, raiseValue);
+  } else {
+    sendAction('raise', raiseValue);
+  }
+}
+
+function doRaiseHost(playerId, amount) {
+  return handleAction(playerId, 'raise', amount);
+}
+
+function handleAction(seatId, action, amount, expected) {
+  const result = PokerEngine.applyAction(g, seatId, action, amount, expected);
+  if (result.ok) { raiseMode = false; syncAfterAction(); }
+  else if (seatId !== mySeatId && seats[seatId]) {
+    sendToPlayer(seatId, { type: 'actionRejected', message: result.message, game: serializeGame(g, seatId) });
+  }
+  return result;
+}
+
+function sendAction(action, amount) {
+  if (!wsConnected || ws.readyState !== WebSocket.OPEN || actionPending || !clientGameState) return;
+  const state = clientGameState;
+  const actor = state.players[state.currentPlayerIndex];
+  if (!actor || actor.id !== mySeatId || !PokerEngine.betting(state)) return;
+  actionPending = true;
+  ws.send(JSON.stringify({ type: 'action', seatId: mySeatId, action, amount,
+    handNumber: state.handNumber, revision: state.revision }));
+  renderGame(state);
+}
+
+function playerAction(action) {
+  if (isHost) handleAction(mySeatId, action);
+  else sendAction(action);
+}
+
+function scheduleAI() {
+  clearTimeout(aiTimer);
+  if (g && PokerEngine.betting(g) && g.players[g.currentPlayerIndex]?.isAI) {
+    const revision = g.revision;
+    aiTimer = setTimeout(() => { if (g && g.revision === revision) aiTurn(); }, 500);
+  }
+}
+
+function syncAfterAction() {
+  actionPending = false;
+  if(g.phase==='tournament_over') {
+    broadcastGameState('result');renderFinalRanking(g);
+  } else if (g.phase === 'hand_over') {
+    if (!tournamentFinished(g) && PokerEngine.allConfirmed(g) && startNewHand()) {
+      showGameScreen();
+      broadcastGameState('state');
+      renderGame(g);
+      scheduleAI();
+      return;
+    }
+    broadcastGameState('result');
+    showResultScreen(g);
+  } else {
+    broadcastGameState('state');
+    renderGame(g);
+  }
+  scheduleAI();
+}
+
+function tournamentFinished(state) {
+  if(state.allowBuyIn)return state.phase==='tournament_over';
+  const alive = state.players.filter(p => p.chips > 0 && !p.disconnected);
+  return alive.length < 2 || (state.players.length > settings.minPlayers && alive.length <= settings.minPlayers);
+}
+
+function nextHand() {
+  const state = isHost ? g : clientGameState;
+  if (!state || state.phase !== 'hand_over') return;
+  if (isHost && tournamentFinished(state)) {
+    g.phase = 'tournament_over';
+    broadcastGameState('result');
+    showGameOver(g.players.filter(p=>p.chips>0&&!p.disconnected));
+    return;
+  }
+  if (isHost) {
+    if (PokerEngine.confirmNextHand(g, mySeatId, g.handNumber)) syncAfterAction();
+  } else if (wsConnected) {
+    ws.send(JSON.stringify({ type:'handReady', handNumber:state.handNumber }));
+    document.getElementById('nextHandBtn').disabled = true;
+  }
+}
+
+function showGameOver() { renderFinalRanking(g); }
+function showGameOverClient(state) { renderFinalRanking(state); }
+function renderFinalRanking(state) {
+  updateSessionTools(state);
+  document.getElementById('gameScreen').style.display='none';
+  document.getElementById('resultScreen').style.display='flex';
+  const ranked=PokerEngine.standings(state);
+  const leaders=ranked.filter(p=>p.place===1);
+  let html='<div class="result-title">🏆 最终排名</div>';
+  html+=`<div class="winners"><span class="winner-label">${leaders.length>1?'并列第一':'冠军'}:</span><span class="winner-names">${leaders.map(p=>escapeHtml(p.name)).join('、')}</span></div>`;
+  html+='<ol class="final-ranking">';
+  for(const p of ranked) {
+    const tied=ranked.filter(other=>other.place===p.place).length>1;
+    const medal=({1:'🥇',2:'🥈',3:'🥉'})[p.place]||`${p.place}.`;
+    const detail=state.allowBuyIn?`筹码 ${p.chips} − 欠款 ${p.bankDebt}`:p.eliminatedHand!=null?`第 ${p.eliminatedHand} 局出局`:p.disconnected?'已退桌':'留桌';
+    const amount=state.allowBuyIn?p.netChips:p.chips;
+    html+=`<li class="ranking-row" data-seat="${p.id}" data-place="${p.place}"><span class="ranking-medal">${medal}</span><span class="ranking-player">${escapeHtml(p.name)}${p.isAI?'（人机）':''}<small>${tied?'并列 · ':''}${detail}</small>${state.allowBuyIn?`<small>累计贷款 ${p.totalBorrowed} · 已还 ${p.totalRepaid}</small>`:''}</span><span class="ranking-chips">${amount}${state.allowBuyIn?`<small>净筹码</small><small>净收益 ${p.netProfit>=0?'+':''}${p.netProfit}</small>`:''}</span></li>`;
+  }
+  html+=`</ol><p class="ranking-note">${state.allowBuyIn?'按现有筹码减未还贷款排名（含已退桌玩家）；净收益再扣除初始筹码。净筹码相同则并列。':'后出局者排名靠前；同局出局按本局起始筹码排序，筹码相同则并列。'}</p><button class="action-next" onclick="backToHome()">返回首页</button>`;
+  document.querySelector('.result-card').innerHTML=html;
+}
+
+function updateSessionTools(state) {
+  document.getElementById('sessionToolbar').hidden=false;document.getElementById('bankBtn').hidden=!state.allowBuyIn;
+  document.getElementById('sessionMode').textContent=state.allowBuyIn?'银行无限场 · 无破产淘汰':'淘汰赛';
+  const p=state.players.find(player=>player.id===mySeatId);
+  document.getElementById('sessionStatus').textContent=state.endRequested?(state.phase==='tournament_over'?'整场已结算':'房主已申请结算，打完当前手后公布排名'):p?`筹码 ${p.chips} · 欠款 ${p.bankDebt} · 净筹码 ${p.chips-p.bankDebt}`:'';
+  const finish=document.getElementById('finishSessionBtn');
+  finish.hidden=!isHost||!state.allowBuyIn;finish.disabled=!!state.endRequested||!wsConnected;
+  finish.textContent=state.endRequested?'已申请结算':'结算整局';
+  finish.title='若本手仍在进行，会打完本手再结算';
+  if(document.getElementById('bankDialog').open)renderBank(state);
+}
+function openBank() {
+  const state=isHost?g:clientGameState;
+  if(!state?.allowBuyIn)return;
+  bankNotice='';renderBank(state);document.getElementById('bankDialog').showModal();
+}
+function renderBank(state) {
+  const p=state.players.find(player=>player.id===mySeatId);
+  if(!p)return;
+  document.getElementById('bankChips').textContent=p.chips;
+  document.getElementById('bankDebt').textContent=p.bankDebt;
+  document.getElementById('bankNet').textContent=p.chips-p.bankDebt;
+  const available=state.phase==='hand_over'&&!state.endRequested&&wsConnected&&!bankPending;
+  document.getElementById('bankBorrowBtn').disabled=!available;
+  document.getElementById('bankRepayBtn').disabled=!available||p.bankDebt===0||p.chips===0;
+  document.getElementById('bankStatus').textContent=state.endRequested?'整场正在结算或已结束，银行不再接受交易。':PokerEngine.betting(state)?'本手进行中，仅可查看账户；本手结束后可借还款。':bankPending?'银行正在确认操作…':bankNotice||'贷款增加筹码和欠款；还款同时扣减两者。交易后需要重新确认下一局。';
+  document.getElementById('bankHistory').innerHTML=(state.bankLog||[]).filter(entry=>entry.seatId===mySeatId).slice(-10).reverse().map(entry=>`<div class="bank-entry"><span>第 ${entry.handNumber} 手 · ${entry.kind==='borrow'?'贷款买入':'还款'}</span><strong>${entry.kind==='borrow'?'+':'−'}${entry.amount}</strong><small>操作后欠款 ${entry.debt}</small></div>`).join('')||'<p class="bank-note">本场暂无借还款记录</p>';
+}
+function processBank(seatId,kind,amount,expected) {
+  const result=PokerEngine.bankTransaction(g,seatId,kind,amount,expected);
+  if(result.ok&&!result.duplicate)syncAfterAction();
+  const message=result.ok?(result.duplicate?'该笔操作已处理，请核对账户。':'银行操作成功，下一局请重新确认。'):result.message;
+  if(seatId!==mySeatId)sendToPlayer(seatId,{type:'bankResult',ok:result.ok,message,game:serializeGame(g,seatId)});
+  else{bankPending=false;bankNotice=message;renderBank(g);}
+  return result;
+}
+function submitBank(kind) {
+  const state=isHost?g:clientGameState;
+  if(!state?.allowBuyIn||bankPending||!wsConnected)return;
+  const p=state.players.find(player=>player.id===mySeatId);
+  const amount=Number(document.getElementById('bankAmount').value);
+  const expected={handNumber:state.handNumber,bankVersion:p.bankVersion,requestId:`${mySeatId}-${Date.now()}-${++bankRequestSequence}`};
+  bankPending=true;renderBank(state);
+  if(isHost)processBank(mySeatId,kind,amount,expected);
+  else ws.send(JSON.stringify({type:'bank',kind,amount,...expected}));
+}
+function finishSession() {
+  if(!isHost||!g||!wsConnected)return;
+  if(PokerEngine.requestSessionEnd(g,mySeatId).ok)syncAfterAction();
+}
+
+function backToHome() {
+  document.getElementById('resultScreen').style.display='none';
+  document.getElementById('gameScreen').style.display='none';
+  document.getElementById('homeScreen').style.display='flex';
+  // 重置
+  if (isHost) {
+    try { ws.close(); } catch(e) {}
+  } else {
+    try { ws.close(); } catch(e) {}
+  }
+  location.reload();
+}
+
+// ========== AI逻辑 ==========
+function aiTurn() {
+  if (!isHost || !g || !PokerEngine.betting(g)) return;
+  const p = g.players[g.currentPlayerIndex];
+  if (!p || !p.isAI || p.folded || p.allIn) return;
+  const need = g.currentBet - p.currentBet;
+  const rand = Math.random();
+  if (need > 0 && rand < need / (g.pot + need) * .5) handleAction(p.id, 'fold');
+  else if (rand > .85 && PokerEngine.canRaise(g, p)) {
+    const amount = Math.min(PokerEngine.minimumRaiseTo(g), p.chips + p.currentBet);
+    handleAction(p.id, amount > g.currentBet ? 'raise' : 'call', amount);
+  } else handleAction(p.id, need > 0 ? 'call' : 'check');
+}
+
+// ========== 聊天 ==========
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  chatMessages.push({name: myName, text});
+  input.value='';
+  renderChat();
+  ws.send(JSON.stringify({ type:'chat', name: myName, text: text }));
+}
+function sendQuickChat(idx) {
+  const text = QUICK_CHATS[idx];
+  chatMessages.push({name: myName, text});
+  renderChat();
+  ws.send(JSON.stringify({ type:'chat', name: myName, text: text }));
+}
+function renderChat() {
+  document.getElementById('chatBox').innerHTML = chatMessages.map(m=>`<div class="chat-msg"><span class="chat-name">${escapeHtml(m.name)}:</span> ${escapeHtml(m.text)}</div>`).join('');
+  document.getElementById('chatBox').scrollTop = 9999;
+  document.getElementById('chatQuick').innerHTML = QUICK_CHATS.map((q,i)=>`<button class="chat-quick-btn" onclick="sendQuickChat(${i})">${q}</button>`).join('');
+}
+
+// ========== 房间逻辑 ==========
+function setConnectionStatus(text, failed = false) {
+  document.getElementById('waitTip').textContent = text;
+  document.getElementById('waitTip').style.color = failed ? '#ff6b6b' : '#64b5f6';
+}
+
+function connectionFailed(text) {
+  bankPending=false;
+  clearTimeout(connectionTimer);
+  wsConnected = false;
+  setConnectionStatus(text, true);
+  document.querySelector('.subtitle').textContent = text;
+  renderSeats();
+  if (g || clientGameState) renderGame(isHost ? g : clientGameState);
+}
+
+// WebSocket连接
+function connectWS(onOpen) {
+  clearTimeout(connectionTimer);
+  if (ws) ws.close();
+  wsConnected = false;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = protocol + '//' + location.host;
+  const socket = new WebSocket(wsUrl);
+  socket.binaryType = 'arraybuffer';
+  ws = socket;
+  connectionTimer = setTimeout(() => {
+    if (ws !== socket) return;
+    connectionFailed('连接超时，请确认服务器和房主在线后重新加入');
+    socket.onclose = null;
+    socket.close();
+  }, 15000);
+  socket.onopen = () => {
+    if (ws !== socket) return;
+    wsConnected = true;
+    console.log('WebSocket connected');
+    if (onOpen) onOpen();
+  };
+  socket.onmessage = (event) => {
+    if (ws !== socket) return;
+    if (event.data instanceof ArrayBuffer)return;
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'error' || data.type === 'roomClosed') {
+        connectionFailed(data.message);
+        socket.onclose = null;
+        socket.close();
+        return;
+      }
+      if (isHost) handleHostMessage(null, data);
+      else handleClientMessage(data);
+    } catch(e) { console.error(e); }
+  };
+  socket.onclose = () => {
+    if (ws !== socket) return;
+    connectionFailed('连接已断开，请确认服务器在线后重新加入房间');
+    console.log('WebSocket closed');
+  };
+  socket.onerror = (err) => {
+    if (ws !== socket) return;
+    connectionFailed('连接失败，请检查网络后重新加入房间');
+    console.error('WebSocket error:', err);
+  };
+}
+
+function createRoom() {
+  roomCode = String(Math.floor(100000 + Math.random()*900000));
+  isHost = true;
+  seats = [{ id: 'host', name: myName, isHost: true, ready: true }];
+  mySeatId = 0;
+
+  document.querySelector('.subtitle').textContent = '正在创建房间...';
+  showWaitScreen();
+  setConnectionStatus('正在创建房间...');
+  connectWS(() => {
+    ws.send(JSON.stringify({ type:'joinRoom', roomCode: roomCode, seatId: 0, name: myName }));
+  });
+}
+
+function joinRoom() {
+  const code = document.getElementById('roomCodeInput').value.trim();
+  if (!/^\d{6}$/.test(code)) { alert('请输入6位数字房间号'); return; }
+  roomCode = code;
+  isHost = false;
+  mySeatId = -1;
+  seats = [];
+  wsConnected = false;
+
+  showWaitScreen();
+  setConnectionStatus('正在连接房间...');
+  connectWS(() => {
+    ws.send(JSON.stringify({ type:'joinRoom', roomCode: roomCode, seatId: -1, name: myName }));
+  });
+}
+
+function sendToPlayer(seatId, msg) {
+  // 通过WebSocket发送，服务器中继
+  ws.send(JSON.stringify({ ...msg, targetSeat: seatId }));
+}
+
+function broadcastSeatsAll() {
+  // 广播座位给所有房客
+  for (let i = 1; i < seats.length; i++) {
+    if (seats[i]) sendToPlayer(i, { type:'seats', seats: seats });
+  }
+}
+
+function handleHostMessage(conn, data) {
+  // 服务器通知有新玩家加入
+  if (data.type === 'joined') {
+    clearTimeout(connectionTimer);
+    showWaitScreen();
+    setConnectionStatus('房间已创建，等待玩家加入...');
+  } else if (data.type === 'peerJoined') {
+    const seatId = data.seatId;
+    if (g) { sendToPlayer(seatId, { type:'error', message:'牌局已开始，请等待本场结束后加入新房间' }); return; }
+    // 确保seats数组有足够位置
+    while (seats.length < seatId) {
+      seats.push(null);
+    }
+    seats[seatId] = { id: 'client-'+seatId, name: data.name, isHost: false, ready: false };
+    delete aiSlots[seatId];
+    if (maxPlayers <= seatId) {
+      maxPlayers = seatId + 1;
+      document.getElementById('maxPlayersVal').textContent = maxPlayers;
+    }
+    // 发joined给新房客
+    sendToPlayer(seatId, { type:'joined', seatId: seatId, seats: seats });
+    // 更新房主界面
+    broadcastSeats();
+    broadcastSettings();
+  } else if (data.type === 'peerLeft') {
+    if (seats[data.seatId]) {
+      seats[data.seatId] = null;
+    }
+    if (g) { PokerEngine.disconnect(g, data.seatId); syncAfterAction(); }
+    else broadcastSeats();
+  } else if (data.type === 'ready') {
+    if (seats[data.seatId]) { seats[data.seatId].ready = true; }
+    broadcastSeats();
+  } else if (data.type === 'action') {
+    if (!g) return;
+    handleAction(data.seatId, data.action, data.amount, data);
+  } else if (data.type === 'handReady') {
+    if (PokerEngine.confirmNextHand(g, data.seatId, data.handNumber)) syncAfterAction();
+  } else if (data.type === 'bank') {
+    if(g)processBank(data.seatId,data.kind,data.amount,data);
+  } else if (data.type === 'chat') {
+    broadcast({ type:'chat', name: data.name, text: data.text });
+  } else if (data.type === 'raise') {
+    if (g) handleAction(data.seatId, 'raise', data.amount, data);
+  } else if (data.type === 'showFolded') {
+    const p = g?.players.find(p=>p.id===data.seatId);
+    if (g?.phase === 'hand_over' && p?.folded) {
+      p.showFolded = !p.showFolded;
+      broadcastGameState('result');
+      showResultScreen(g);
+    }
+  }
+
+}
+
+function handleClientMessage(data) {
+  if (data.game && ['gameStart','state','result','actionRejected'].includes(data.type)) {
+    actionPending = false;
+    raiseMode = false;
+  }
+  if (data.type === 'seats') {
+    seats = data.seats;
+    if (clientGameState) return;
+    showWaitScreen();
+    renderSeats();
+    if (mySeatId >= 0) setConnectionStatus(seats[mySeatId]?.ready ? '已准备，等待房主开始游戏' : '已连接房间，请点击准备');
+  } else if (data.type === 'settings') {
+    maxPlayers = data.maxPlayers;
+    settings = data.settings;
+    aiSlots = data.aiSlots || {};
+    renderSeats();
+  } else if (data.type === 'joined') {
+    if (!data.seats || !data.seats[data.seatId]) return;
+    clearTimeout(connectionTimer);
+    mySeatId = data.seatId;
+    if (data.seats) {
+      seats = data.seats;
+    }
+    showWaitScreen();
+    renderSeats();
+    setConnectionStatus('已连接房间，请点击准备');
+  } else if (data.type === 'gameStart') {
+    showGameScreen();
+    clientGameState = data.game;
+    renderGame(data.game);
+  } else if (data.type === 'bankResult') {
+    bankPending=false;bankNotice=data.message;clientGameState=data.game;
+    if(data.game.phase==='tournament_over')renderFinalRanking(data.game);
+    else if(data.game.phase==='hand_over')showResultScreen(data.game);
+    else renderGame(data.game);
+    if(document.getElementById('bankDialog').open)renderBank(data.game);
+  } else if (data.type === 'actionRejected') {
+    clientGameState = data.game;
+    if (data.game.phase === 'hand_over') showResultScreen(data.game);
+    else {
+      renderGame(data.game);
+      document.getElementById('actionHint').textContent = data.message;
+    }
+  } else if (data.type === 'state') {
+    clientGameState = data.game;
+    // 确保从结算/等待界面切回游戏界面
+    document.getElementById('resultScreen').style.display='none';
+    document.getElementById('waitScreen').style.display='none';
+    document.getElementById('homeScreen').style.display='none';
+    document.getElementById('gameScreen').style.display='flex';
+    renderGame(data.game);
+  } else if (data.type === 'result') {
+    clientGameState = data.game;
+    if (data.game.phase === 'tournament_over') {
+      showGameOverClient(data.game);
+    } else {
+      showResultScreen(data.game);
+    }
+  } else if (data.type === 'chat') {
+    chatMessages.push({name: data.name, text: data.text});
+    renderChat();
+  }
+}
+
+function showWaitScreen() {
+  document.getElementById('homeScreen').style.display = 'none';
+  document.getElementById('waitScreen').style.display = 'flex';
+  document.getElementById('displayRoomCode').textContent = roomCode;
+  const shareUrl = window.location.href.split('#')[0] + '#room=' + roomCode;
+  document.getElementById('shareLink').textContent = '分享链接: ' + shareUrl;
+  document.getElementById('shareLink').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setConnectionStatus('房间链接已复制，请同时告知朋友访问密码');
+    } catch (_) { setConnectionStatus('请手动复制上方房间链接，并告知朋友访问密码'); }
+  };
+  document.getElementById('shareLink').onkeydown = event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); document.getElementById('shareLink').click(); }
+  };
+  document.getElementById('readyBtn').style.display = isHost ? 'none' : 'block';
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('settingsPanel').style.display = isHost ? 'block' : 'none';
+  renderSeats();
+}
+
+function changeMaxPlayers(d) {
+  maxPlayers = Math.max(2, Math.min(8, maxPlayers + d));
+  document.getElementById('maxPlayersVal').textContent = maxPlayers;
+  broadcastSettings();
+  renderSeats();
+}
+function onSettingsChange() {
+  if(g)return;
+  settings.bigBlind = parseInt(document.getElementById('bigBlindSel').value);
+  settings.initChips = parseInt(document.getElementById('initChipsSel').value);
+  settings.minPlayers = parseInt(document.getElementById('minPlayersSel').value);
+  settings.allowBuyIn = document.getElementById('allowBuyInSel').value==='yes';
+  document.getElementById('minPlayersSel').disabled=settings.allowBuyIn;
+  broadcastSettings();
+}
+function broadcastSettings() {
+  broadcast({ type:'settings', maxPlayers: maxPlayers, settings: settings, aiSlots: aiSlots });
+}
+
+// 准备按钮
+document.getElementById('readyBtn').onclick = () => {
+  const seat = seats[mySeatId];
+  if (isHost || !seat || seat.ready || !wsConnected || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type:'ready', seatId: mySeatId, targetSeat: 0 }));
+  setConnectionStatus('准备请求已发送，等待房主确认...');
+};
+
+// 开始游戏（房主）
+document.getElementById('startBtn').onclick = () => {
+  if (!isHost || !wsConnected || seats.some(s => s && !s.isHost && !s.ready)) return;
+  startGameHost();
+};
+
+// 离开
+document.getElementById('leaveBtn').onclick = () => {
+  try { ws.close(); } catch(e) {}
+  location.reload();
+};
+
+// 首页按钮
+// 创建房间
+document.getElementById('createBtn').onclick = () => {
+  createRoom();
+};
+
+// 加入房间
+document.getElementById('joinBtn').onclick = () => {
+  document.getElementById('roomCodeInput').style.display = 'block';
+  document.getElementById('confirmJoinBtn').style.display = 'block';
+  document.getElementById('roomCodeInput').focus();
+};
+document.getElementById('confirmJoinBtn').onclick = () => {
+  joinRoom();
+};
+
+// 昵称输入
+document.getElementById('nameInput').addEventListener('input', (e) => {
+  myName = e.target.value.trim() || '玩家' + Math.floor(Math.random()*100);
+  localStorage.setItem('starstone_name', myName);
+});
+
+// 检查URL是否带房间号
+window.onload = () => {
+  // 初始化昵称
+  const saved = localStorage.getItem('starstone_name');
+  if (saved) myName = saved;
+  document.getElementById('nameInput').value = myName;
+
+  const hash = window.location.hash;
+  const match = hash.match(/room=(\d{6})/);
+  if (match) {
+    document.getElementById('roomCodeInput').value = match[1];
+    joinRoom();
+  }
+};
+</script>
+</body>
+</html>
