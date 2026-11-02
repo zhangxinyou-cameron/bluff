@@ -48,6 +48,24 @@ test('duplicate command does not repeat a loan; history is paged and contains pu
   for(let i=0;i<80;i++)f.manager.event(f.room,'chat','message '+i,{name:'P1'});
   f.manager.handle(f.sockets[1],{type:'history',afterEvent:0});const page=f.sockets[1].messages.at(-1);assert.equal(page.events.length,25);assert.equal(page.hasMore,true);assert.ok(!JSON.stringify(page).includes('holeCards'));f.manager.check(f.room);
 });
+test('street changes clear every action marker including the closing actor, while history retains all actions',t=>{
+  const f=fixture(t,4);f.room.settings.blindMode='standard';f.room.settings.allowBuyIn=true;f.start();const g=f.room.game;
+  // Keep one folded player to check skipped seats are cleared as well.
+  let folded=false,steps=0,transitions=0;
+  while(E.betting(g)){
+    assert.ok(++steps<30);const actor=g.players[g.currentPlayerIndex],phase=g.phase,previous=f.room.history.filter(e=>e.kind==='action').length;
+    const action=!folded?'fold':actor.currentBet<g.currentBet?'call':'check';folded=true;
+    assert.ok(f.command(f.sockets[actor.id],'action',{action,handNumber:g.handNumber,revision:g.revision}).ok);
+    const history=f.room.history.filter(e=>e.kind==='action');assert.equal(history.length,previous+1);assert.equal(history.at(-1).street,phase);
+    if(g.phase!==phase){
+      transitions++;assert.ok(g.players.every(p=>p.lastAction===null));
+      for(const ws of f.sockets)assert.ok(f.latest(ws).game.players.every(p=>p.lastAction===null));
+    }else assert.equal(actor.lastAction.label,history.at(-1).label);
+  }
+  assert.equal(transitions,4);assert.equal(g.phase,'hand_over');assert.equal(f.room.history.filter(e=>e.kind==='action').length,steps);f.manager.check(f.room);
+  for(const ws of f.sockets)f.command(ws,'handReady',{handNumber:1});assert.equal(g.handNumber,2);assert.ok(g.players.every(p=>p.lastAction===null));
+});
+
 test('invalid action cursor is repaired, and accounting anomaly pauses the room visibly',t=>{
   const f=fixture(t,3);f.start();f.room.game.currentPlayerIndex=-1;f.manager.tick();assert.ok(f.room.game.currentPlayerIndex>=0);
   f.room.game.players[0].chips++;f.command(f.sockets[0],'chat',{text:'invariant check'});assert.equal(f.room.paused,true);assert.ok(f.latest(f.sockets[0]).paused);

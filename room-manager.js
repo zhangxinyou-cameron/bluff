@@ -192,7 +192,9 @@ class RoomManager {
     const paid=action==='call'?Math.min(before.chips,Math.max(0,before.currentBet-before.bet)):action==='allin'?before.chips:action==='raise'?amount-before.bet:0;
     const label=action==='raise'?`${ACTION[action]} 至 ${amount}`:action==='allin'?`${ACTION[action]} 至 ${before.chips+before.bet}`:action==='call'?`${ACTION[action]} ${paid}`:ACTION[action];
     const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),raised:before.bet+paid>before.currentBet,label,street:before.phase,automatic});
-    p.lastAction={id:event.id,action,label,hand:g.handNumber,phase:before.phase,automatic};
+    // The closing action belongs in history, never in the new street's markers.
+    if(g.phase===before.phase)p.lastAction={id:event.id,action,label,hand:g.handNumber,phase:before.phase,automatic};
+    else for(const player of g.players)player.lastAction=null;
     if(g.communityCards.length>before.cards)this.event(room,'street',`${PHASE[g.phase]||'公共牌发完'} · ${g.communityCards.map(c=>'♠♥♣♦'[c.suit]+({11:'J',12:'Q',13:'K',14:'A'}[c.rank]||c.rank)).join(' ')}`);
     const changed=g.communityCards.length>before.cards;
     this.pace(room,changed?(g.communityCards.length-before.cards>3?'runout':g.phase==='hand_over'?'runout':'street'):null,before.cards,changed?(g.phase==='hand_over'?this.timing.runout:this.timing.street):this.timing.action);

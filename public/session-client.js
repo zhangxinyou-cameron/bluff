@@ -114,8 +114,8 @@
     const blindRule=state.blindRule||(state.variant==='short'?'ante':'standard'),blindLabel=blindRule==='ante'?'全员底注＋庄家盲注':blindRule==='position'?'下家1倍 / 下下家半倍':'标准大小盲';
     node('rulesBadge').textContent=`${state.variant==='short'?'短牌':'标准德扑'} · ${blindLabel}`;
     node('rulesBadge').title=(state.variant==='short'?'36张6—A，同花大于葫芦，A6789最小顺子；':'52张标准德州扑克；')+(blindRule==='position'?`庄家左手第一位 ${state.bigBlind}、第二位 ${Math.floor(state.bigBlind/2)}，其他人不付底注`:blindRule==='ante'?`全员底注 ${state.bigBlind}，庄家另付一份盲注`:`小盲 ${Math.floor(state.bigBlind/2)} / 大盲 ${state.bigBlind}`);
-    const last=events.filter(event=>event.kind==='action'&&event.hand===state.handNumber).at(-1);
-    node('actionAnnouncement').textContent=last?last.text:`第 ${state.handNumber} 手 · ${state.variant==='short'?'短牌规则':'标准德扑'} · 等待行动`;
+    const last=events.filter(event=>event.kind==='action'&&event.hand===state.handNumber&&event.street===state.phase).at(-1);
+    node('actionAnnouncement').textContent=last?last.text:`第 ${state.handNumber} 手 · ${PHASE_NAMES[state.phase]||'本轮'} · 等待行动`;
     node('actionAnnouncement').dataset.action=last?.action||'deal';
     if(data.paused)status('异常检测已暂停牌局以保护筹码，请联系房主检查','error');
     if(node('bankDialog').open){renderBank(state);if(locked&&state.phase==='hand_over'){node('bankBorrowBtn').disabled=true;node('bankRepayBtn').disabled=true;if(remaining>0)node('bankStatus').textContent='结算过场中，稍后可借还款。';}}

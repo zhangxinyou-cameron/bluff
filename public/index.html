@@ -486,7 +486,9 @@ function renderGame(g) {
     if(p.id===mySeatId)html+='<span class="self-seat-label">你</span>';
     const position=p.position;
     html += `<div class="player-name">${typeof RiverAvatars!=='undefined'?RiverAvatars.markup(p.avatar,p.name):`<span class="player-avatar" data-avatar="default">${p.isAI?'🤖':'♠'}</span>`}<span class="player-label" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span></div><div class="player-chips">${position?`<span class="player-position" title="${escapeHtml(position.description)} · 翻前第${position.preflop}位 / 翻后第${position.postflop}位">${escapeHtml(position.label)}</span>`:''}<span>💰${p.chips}</span></div>`;
-    html += `<div class="player-action move-${escapeHtml(p.lastAction?.action||'waiting')}">${p.lastAction?escapeHtml(p.lastAction.label):'尚未行动'}${p.connected===false?' · 暂离':''}</div>`;
+    const currentAction=p.lastAction?.hand===g.handNumber&&p.lastAction.phase===g.phase?p.lastAction:null;
+    const actionText=currentAction?.label||(p.folded?'已弃牌':p.allIn?'已全押':!p.isActive?'本手旁观':'尚未行动');
+    html += `<div class="player-action move-${escapeHtml(currentAction?.action||'waiting')}">${escapeHtml(actionText)}${p.connected===false?' · 暂离':''}</div>`;
     if (p.currentBet>0) html += `<div class="player-bet">贡献:${p.currentBet}</div>`;
     if (p.folded) html += `<div class="fold-tag">弃牌</div>`;
     if (p.allIn) html += `<div class="allin-tag">全押</div>`;

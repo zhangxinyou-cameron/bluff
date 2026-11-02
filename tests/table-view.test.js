@@ -61,6 +61,18 @@ test('action highlights advance clockwise within every street for 2–8 standard
   }
 });
 
+test('action boxes ignore stale streets and hands, preserving folded and all-in status',()=>{
+  const v=view(),game=E.createGame(Array.from({length:4},(_,id)=>({id,name:'玩家'+id,chips:2000})),20,{blindMode:'standard'});E.startHand(game,()=>.42);
+  game.phase='flop';game.players[0].lastAction={hand:game.handNumber,phase:'pre_flop',action:'raise',label:'上轮加注'};
+  game.players[1].lastAction={hand:game.handNumber-1,phase:'flop',action:'call',label:'上一手跟注'};
+  game.players[2].lastAction={hand:game.handNumber,phase:'flop',action:'check',label:'本轮过牌'};
+  game.players[3].folded=true;v.render(game,0);
+  const boxes=()=>[...(v.elements.get('playersTop').innerHTML+v.elements.get('playersBottom').innerHTML).matchAll(/<div class="player-action [^"]*">([^<]*)<\/div>/g)].map(m=>m[1]);
+  assert.deepEqual(boxes().sort(),['尚未行动','尚未行动','本轮过牌','已弃牌'].sort());
+  game.players[1].allIn=true;game.phase='turn';v.render(game,0);
+  assert.deepEqual(boxes().sort(),['尚未行动','已全押','尚未行动','已弃牌'].sort());
+});
+
 test('raise presets use pot after calling and expose legal total raise-to amounts',()=>{
   const v=view();
   const game={pot:100,currentBet:40,minRaise:20},player={currentBet:10,chips:990};
