@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const { WebSocketServer } = require('ws');
 const { AccessControl, promptStartupPassword } = require('./access');
 const { RoomManager } = require('./room-manager');
+const { findCloudflared } = require('./tunnel');
 
 const PORT = 3000;
 
@@ -119,20 +120,22 @@ function getLocalIPs() {
 
 // 启动Cloudflare公网隧道
 function startTunnel() {
-  const isWindows = os.platform() === 'win32';
-  const exePath = isWindows
-    ? path.join(__dirname, 'cloudflared.exe')
-    : '/tmp/cloudflared';
+  const exePath = findCloudflared();
 
-  if (!fs.existsSync(exePath)) {
-    console.log('  (公网隧道未启动，未找到cloudflared)');
+  if (!exePath) {
+    console.log('  公网隧道未启动：未找到 cloudflared。');
+    console.log('  请将 cloudflared'+(process.platform==='win32'?'.exe':'')+' 放到：'+__dirname);
+    console.log('  也可加入系统 PATH，或设置 CLOUDFLARED_PATH 为程序完整路径，然后重启。');
+    console.log('  本地和同 WiFi 访问仍可正常使用。');
     return;
   }
 
   const args = ['tunnel', '--url', `http://localhost:${PORT}`];
-  const proc = spawn(exePath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const proc = spawn(exePath, args, { windowsHide:true, stdio: ['ignore', 'pipe', 'pipe'] });
 
   let publicUrl = null;
+  proc.on('error',error=>console.log('  公网隧道程序启动失败：'+error.message+'；请检查程序路径和运行权限。'));
+  proc.on('exit',code=>{if(!publicUrl)console.log('  公网隧道程序已退出（'+code+'），尚未生成地址；请检查网络后重启服务器。');});
 
   proc.stdout.on('data', (data) => {
     const text = data.toString();
