@@ -89,9 +89,9 @@
     el('socialPresence').dataset.online=String(!!selected&&selected.connected!==false);
     el('socialAudience').textContent=socialTab==='phrases'?'语言包会发送给整桌朋友':socialTab==='peek'?'由这位玩家决定是否向你亮牌':'礼物将送到所选玩家座位';
     const request=data?.peekRequests?.find(r=>r.from===mySeatId&&r.to===target?.id);
-    const can=!!game&&!!me?.folded&&me.holeCards.length===2&&game.phase!=='tournament_over'&&!!target&&!target.isAI&&target.connected!==false&&!request;
+    const can=!!game&&PokerEngine.canRequestPeek(me)&&game.phase!=='tournament_over'&&!!target&&!target.isAI&&!target.disconnected&&target.connected!==false&&!request;
     el('requestPeekBtn').disabled=!can||!wsConnected||busy;
-    el('peekHelp').textContent=request?request.status==='pending'?'申请已发送，等待对方答复。':'本手已向这位玩家申请过，可查看上方结果。':can?'小费于本手结算后转账；对方拒绝或申请过期均不扣款。':'本手弃牌后，可向在线真人申请看牌。';
+    el('peekHelp').textContent=request?request.status==='pending'?'申请已发送，等待对方答复。':'本手已向这位玩家申请过，可查看上方结果。':can?me.chips===0?'观战也可申请看牌，无筹码时小费填0；需对方同意。':'小费于本手结算后转账；对方拒绝或申请过期均不扣款。':'本手弃牌或无筹码观战时，可向在线真人申请看牌。';
     for(const button of el('giftButtons').querySelectorAll('button'))button.disabled=!selected||!wsConnected||busy;
     for(const button of el('phraseButtons').querySelectorAll('button'))button.disabled=!wsConnected||busy;
     el('kickPlayerBtn').hidden=!isHost;el('kickPlayerBtn').disabled=!el('socialTarget').value||!wsConnected;

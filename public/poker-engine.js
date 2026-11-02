@@ -85,7 +85,7 @@ function cmpHand(a,b) {
       initialTotal:players.reduce((sum,p)=>sum+p.chips,0),
       deck: [], communityCards: [], pot: 0, currentBet: 0, minRaise: bigBlind,
       smallBlind: Math.floor(bigBlind/2), bigBlind, phase: 'waiting', dealerIndex: -1,
-      currentPlayerIndex: -1, handNumber: 0, revision: 0, winners: [], pots: [], nextHandReady: [], lastBigBlindId: null };
+      currentPlayerIndex: -1, handNumber: 0, revision: 0, winners: [], pots: [], nextHandReady: [], lastBigBlindId: null, showdownOccurred:false };
   }
   function confirmationPlayers(g) { return g.players.filter(p=>!p.isAI&&!p.disconnected&&p.connected!==false); }
   function allConfirmed(g) { return confirmationPlayers(g).every(p=>(g.nextHandReady||[]).includes(p.id)); }
@@ -128,7 +128,7 @@ function cmpHand(a,b) {
     g.runoutVote=null;g.runoutDecision=false;g.runoutBoards=null;g.peekRequests=[];g.privateReveals={};g.tips=[];
     g.handNumber++; g.revision++; g.deck=shuffle(createDeck(g.variant), random); g.communityCards=[];
     g.pot=0; g.currentBet=g.bigBlind; g.minRaise=g.bigBlind;
-    g.phase='pre_flop'; g.winners=[]; g.pots=[]; g.nextHandReady=[];
+    g.phase='pre_flop'; g.winners=[]; g.pots=[]; g.nextHandReady=[];g.showdownOccurred=false;
     for (const p of g.players) Object.assign(p, { holeCards: [], currentBet: 0, totalBet: 0,
       folded: !!p.disconnected||p.connected===false, allIn: false, handResult: null, handResults:null, isActive: p.chips>0&&!p.disconnected&&p.connected!==false,
       lastAction:null,
@@ -243,6 +243,7 @@ function cmpHand(a,b) {
   }
   function settle(g,showdown=true) {
     if (g.phase==='hand_over') return;
+    g.showdownOccurred=showdown===true;
     const contenders=g.players.filter(live);
     const boards=g.runoutBoards||[g.communityCards];
     if (showdown) for (const p of contenders) {p.handResults=boards.map(board=>evalBest([...p.holeCards,...board],g.variant));p.handResult=p.handResults[0];}
@@ -360,5 +361,8 @@ function cmpHand(a,b) {
     if(!betting(g)&&g.phase!=='runout_vote')finalizeSession(g);
     return {ok:true};
   }
-  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,bankTransaction,requestSessionEnd};
+  function canRequestPeek(p) {
+    return !!p&&!p.disconnected&&p.connected!==false&&((p.folded&&p.holeCards?.length===2)||(!p.isActive&&p.chips===0));
+  }
+  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,bankTransaction,requestSessionEnd,canRequestPeek};
 });

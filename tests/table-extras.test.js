@@ -95,6 +95,25 @@ test('peek requires a folded requester and owner consent; only that viewer recei
   assert.ok(!JSON.stringify(f.r.history).includes('holeCards'));
   for(const ws of f.sockets)f.command(ws,'handReady',{handNumber:1});assert.deepEqual(g.privateReveals,{});assert.deepEqual(g.peekRequests,[]);
 });
+test('zero-chip spectators in both modes can request private cards with consent, but active all-ins cannot',t=>{
+  for(const allowBuyIn of [false,true]){
+    const f=table(t,4);f.r.settings.minPlayers=1;
+    const g=E.createGame(Array.from({length:4},(_,id)=>({id,name:'P'+id,chips:id===3?0:2000,connected:true})),20,{allowBuyIn});
+    f.r.game=g;E.startHand(g);f.m.publish(f.r);const spectator=g.players[3];
+    assert.equal(spectator.isActive,false);assert.equal(spectator.folded,false);assert.equal(spectator.holeCards.length,0);
+    assert.ok(f.command(f.sockets[3],'peekRequest',{target:0,tip:0,handNumber:1}).ok);const req=g.peekRequests[0];
+    assert.equal(f.latest(f.sockets[3]).game.players[0].holeCards.length,0);
+    assert.ok(f.command(f.sockets[0],'peekReply',{peekId:req.id,accept:true}).ok);
+    assert.equal(f.latest(f.sockets[3]).game.players[0].holeCards.length,2);assert.equal(f.latest(f.sockets[1]).game.players[0].holeCards.length,0);
+    assert.equal(g.tips.length,0);f.m.check(f.r);
+    assert.equal(f.command(f.sockets[3],'peekRequest',{target:1,tip:1,handNumber:1}).ok,false);
+    assert.equal(f.command(f.sockets[1],'peekRequest',{target:0,tip:0,handNumber:1}).ok,false);
+  }
+  assert.equal(E.canRequestPeek({isActive:true,chips:0,allIn:true,folded:false,holeCards:[{},{}]}),false);
+  assert.equal(E.canRequestPeek({isActive:false,chips:0,disconnected:true}),false);
+  assert.equal(E.canRequestPeek({isActive:false,chips:2000,folded:false,holeCards:[]}),false);
+});
+
 test('peek refusal, expiry and overlapping tip offers never debit chips',t=>{
   const f=table(t,4);f.start();const g=f.r.game;f.act('fold');const before=g.players[1].chips;
   f.command(f.sockets[1],'peekRequest',{target:0,tip:1500,handNumber:1});f.command(f.sockets[1],'peekRequest',{target:2,tip:1000,handNumber:1});

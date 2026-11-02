@@ -332,6 +332,7 @@ function serializeGame(g, viewerId) {
   return {
     handNumber: g.handNumber,
     phase: g.phase,
+    showdownOccurred:g.showdownOccurred===true,
     pot: g.pot,
     currentBet: g.currentBet,
     dealerIndex: g.dealerIndex,
@@ -360,9 +361,8 @@ function serializeGame(g, viewerId) {
       eliminatedHand: p.eliminatedHand,
       eliminationStack: p.eliminationStack,
       showFolded: p.showFolded || false,
-      // 结算时：未弃牌玩家亮牌；弃牌玩家默认不亮，除非主动选择
-      // 游戏中：只发自己的牌
-      holeCards: (showAllCards && (!p.folded || p.showFolded)) ? p.holeCards : (p.id === viewerId ? p.holeCards : [])
+      // Only an actual showdown or the owner's explicit choice reveals cards.
+      holeCards: (showAllCards && ((g.showdownOccurred===true&&!p.folded)||p.showFolded)) ? p.holeCards : (p.id === viewerId ? p.holeCards : [])
     }))
   };
 }
@@ -518,7 +518,7 @@ function renderGame(g) {
     document.getElementById('handTypeText').textContent = hType;
     document.getElementById('winRateText').textContent = wRate;
   } else {
-    infoBar.style.display = 'flex';document.getElementById('handTypeText').textContent=cp0?.folded&&cp0.holeCards.length===2?'本手已弃牌 · 可申请看牌':cp0?.chips>0?'本手旁观 · 下一手可加入':'等待下一手';document.getElementById('winRateText').textContent='';
+    infoBar.style.display = 'flex';document.getElementById('handTypeText').textContent=cp0?.folded&&cp0.holeCards.length===2?'本手已弃牌 · 可申请看牌':cp0&&!cp0.isActive&&cp0.chips===0?'无筹码观战 · 可申请看牌':cp0?.chips>0?'本手旁观 · 下一手可加入':'等待下一手';document.getElementById('winRateText').textContent='';
   }
 
   // 操作按钮
@@ -591,17 +591,19 @@ function showResultScreen(g) {
   let prHtml='';
   g.players.forEach(p => {
     const net = (p.chipsAfterHand ?? p.chips) - (p.chipsBeforeHand ?? p.chips);
-    prHtml += `<div class="player-result-row"><span class="pr-name">${escapeHtml(p.name)}</span><div class="pr-cards">`;
-    // 显示牌：有holeCards数据就显示（未弃牌自动亮牌，弃牌选择亮牌后也显示）
+    prHtml += `<div class="player-result-row" data-result-seat="${p.id}"><span class="pr-name">${escapeHtml(p.name)}</span><div class="pr-cards">`;
+    // The server sends private cards only to their owner or authorized viewers.
     if (p.holeCards && p.holeCards.length === 2) {
       p.holeCards.forEach(c=>prHtml+=fmtCardSmall(c));
     } else if (p.folded) {
       prHtml += `<span style="font-size:10px;color:#888;margin:0 4px;">弃牌</span>`;
+    } else {
+      prHtml += `<span class="unrevealed-hand" style="font-size:10px;color:#a6b69b;margin:0 4px;">未亮牌</span>`;
     }
     prHtml += `</div><span class="pr-hand">${p.handResult?p.handResult.name:(p.folded?'已弃牌':'-')}</span><span class="pr-net ${net>=0?'win':'lose'}">${net>=0?'+':''}${net}</span><span class="pr-chips">💰${p.chips}</span>`;
-    // 弃牌玩家且是自己：加亮牌按钮
-    if (p.folded && p.id === mySeatId) {
-      prHtml += ` <button class="action-btn" style="padding:2px 6px;font-size:10px;" onclick="toggleShowFolded()">${p.showFolded?'隐藏牌':'亮牌'}</button>`;
+    // Folded players and an uncontested winner may choose to show their own hand.
+    if (p.id===mySeatId&&p.holeCards?.length===2&&(p.folded||g.showdownOccurred===false&&g.winners.includes(p.id))) {
+      prHtml += ` <button class="action-btn" data-show-hand="${p.id}" style="padding:2px 6px;font-size:10px;" onclick="toggleShowFolded()">${p.showFolded?'隐藏牌':'向全桌亮牌'}</button>`;
     }
     prHtml += `</div>`;
   });

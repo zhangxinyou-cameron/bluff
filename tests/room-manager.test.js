@@ -66,6 +66,35 @@ test('street changes clear every action marker including the closing actor, whil
   for(const ws of f.sockets)f.command(ws,'handReady',{handNumber:1});assert.equal(g.handNumber,2);assert.ok(g.players.every(p=>p.lastAction===null));
 });
 
+test('uncontested winner stays private until owner opts in; stale, forged and mid-hand reveals fail',t=>{
+  const f=fixture(t,3);f.room.settings.allowBuyIn=true;f.start();const g=f.room.game;
+  assert.equal(f.command(f.sockets[0],'showFolded',{handNumber:1}).ok,false);
+  while(E.betting(g)){const p=g.players[g.currentPlayerIndex];assert.ok(f.command(f.sockets[p.id],'action',{action:'fold',handNumber:1,revision:g.revision}).ok);}
+  const winner=g.players.find(p=>g.winners.includes(p.id)),others=f.sockets.filter(ws=>ws.seatId!==winner.id),owner=f.sockets[winner.id];
+  assert.equal(g.showdownOccurred,false);assert.equal(f.latest(owner).game.players.find(p=>p.id===winner.id).holeCards.length,2);
+  for(const ws of others)assert.equal(f.latest(ws).game.players.find(p=>p.id===winner.id).holeCards.length,0);
+  assert.equal(f.command(owner,'showFolded',{handNumber:0}).ok,false);
+  // Supplied seat IDs cannot grant permission to somebody else's cards.
+  f.command(others[0],'showFolded',{seatId:winner.id,handNumber:1});assert.equal(winner.showFolded,false);
+  assert.ok(f.command(owner,'showFolded',{handNumber:1}).ok);
+  for(const ws of others)assert.equal(f.latest(ws).game.players.find(p=>p.id===winner.id).holeCards.length,2);
+  assert.ok(f.command(owner,'showFolded',{handNumber:1}).ok);
+  for(const ws of others)assert.equal(f.latest(ws).game.players.find(p=>p.id===winner.id).holeCards.length,0);
+  const token=owner.messages.find(m=>m.type==='joined').resumeToken;f.manager.leave(owner);const resumed=f.join({resumeToken:token});
+  assert.equal(f.latest(resumed).game.players.find(p=>p.id===winner.id).holeCards.length,2);
+  for(const ws of [...others,resumed])f.command(ws,'handReady',{handNumber:1});
+  assert.equal(g.handNumber,2);assert.ok(g.players.every(p=>!p.showFolded));
+  assert.equal(f.command(resumed,'showFolded',{handNumber:1}).ok,false);
+});
+
+test('contested showdown still reveals all live hands and keeps folded hands private',t=>{
+  const f=fixture(t,3);f.room.settings.allowBuyIn=true;f.start();const g=f.room.game;
+  let folded=false;while(E.betting(g)){const p=g.players[g.currentPlayerIndex],action=!folded?'fold':p.currentBet<g.currentBet?'call':'check';folded=true;assert.ok(f.command(f.sockets[p.id],'action',{action,handNumber:1,revision:g.revision}).ok);}
+  assert.equal(g.showdownOccurred,true);
+  for(const ws of f.sockets)for(const p of f.latest(ws).game.players)assert.equal(p.holeCards.length,p.id===ws.seatId||!p.folded?2:0);
+  const live=g.players.find(p=>!p.folded);assert.equal(f.command(f.sockets[live.id],'showFolded',{handNumber:1}).ok,false);
+});
+
 test('invalid action cursor is repaired, and accounting anomaly pauses the room visibly',t=>{
   const f=fixture(t,3);f.start();f.room.game.currentPlayerIndex=-1;f.manager.tick();assert.ok(f.room.game.currentPlayerIndex>=0);
   f.room.game.players[0].chips++;f.command(f.sockets[0],'chat',{text:'invariant check'});assert.equal(f.room.paused,true);assert.ok(f.latest(f.sockets[0]).paused);

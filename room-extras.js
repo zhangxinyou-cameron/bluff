@@ -64,7 +64,7 @@ module.exports=function install(RoomManager){
         person.socialAt=Date.now();this.event(room,'gift',`${person.name} 向 ${target.name} ${gift.label}`,{giftId:gift.id,from:person.id,to:data.target,name:person.name});return{ok:true};
       }
       if(data.type==='peekRequest'){
-        if(!g||data.handNumber!==g.handNumber||!me?.folded||me.holeCards.length!==2||g.phase==='tournament_over')return fail('只有本手已弃牌的玩家可以申请看牌');
+        if(!g||data.handNumber!==g.handNumber||!E.canRequestPeek(me)||g.phase==='tournament_over')return fail('只有本手已弃牌或无筹码观战的玩家可以申请看牌');
         const target=g.players.find(p=>p.id===data.target),tip=Number(data.tip||0);
         if(!target||target.id===person.id||target.isAI||target.disconnected||target.connected===false||target.holeCards.length!==2)return fail('请选择在线真人玩家');
         if(!Number.isSafeInteger(tip)||tip<0||tip>me.chips)return fail('小费须为不超过持有筹码的非负整数');
@@ -80,7 +80,7 @@ module.exports=function install(RoomManager){
         if(!request||request.status!=='pending')return fail('申请已处理或已过期');
         if(data.accept!==true){request.status='declined';return{ok:true};}
         const payer=g.players.find(p=>p.id===request.from),reserved=g.tips.filter(t=>t.from===payer.id&&!t.paid).reduce((s,t)=>s+t.amount,0);
-        if(payer.disconnected||payer.connected===false||!payer.folded||!me||me.connected===false)return fail('申请者或目标玩家已离桌');
+        if(!E.canRequestPeek(payer)||!me||me.connected===false||me.disconnected)return fail('申请者已不能看牌或目标玩家已离桌');
         if(payer.chips-reserved<request.tip)return fail('申请者可用筹码不足，小费未转账');
         request.status='approved';(g.privateReveals[person.id]||=([])).push(payer.id);
         if(request.tip>0)g.tips.push({from:payer.id,to:person.id,amount:request.tip,paid:false});

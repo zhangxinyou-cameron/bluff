@@ -74,14 +74,14 @@ class RoomManager {
     const reveal=['hand_over','showdown','tournament_over'].includes(g.phase);
     return{handNumber:g.handNumber,phase:g.phase,pot:g.pot,currentBet:g.currentBet,dealerIndex:g.dealerIndex,currentPlayerIndex:g.currentPlayerIndex,
       communityCards:g.communityCards,minRaise:g.minRaise,bigBlind:g.bigBlind,revision:g.revision,nextHandReady:g.nextHandReady,winners:g.winners,pots:g.pots,
-      allowBuyIn:g.allowBuyIn,endRequested:g.endRequested,bankLog:g.bankLog,bankSequence:g.bankSequence,variant:g.variant,blindRule:g.blindRule,blindSeats:g.blindSeats,actionOrder:g.actionOrder,runoutBoards:g.runoutBoards,
+      allowBuyIn:g.allowBuyIn,endRequested:g.endRequested,bankLog:g.bankLog,bankSequence:g.bankSequence,variant:g.variant,blindRule:g.blindRule,blindSeats:g.blindSeats,actionOrder:g.actionOrder,runoutBoards:g.runoutBoards,showdownOccurred:g.showdownOccurred===true,
       players:g.players.map(p=>({id:p.id,name:p.name,avatar:p.avatar||'default',chips:p.chips,currentBet:p.currentBet,totalBet:p.totalBet,folded:p.folded,allIn:p.allIn,isActive:p.isActive,
         handResult:p.handResult,handResults:p.handResults,acted:p.acted,canRaise:E.canRaise(g,p),disconnected:!!p.disconnected,connected:p.connected!==false,isAI:!!p.isAI,
         chipsBeforeHand:p.chipsBeforeHand,chipsAfterHand:p.chipsAfterHand,initialChips:p.initialChips,bankDebt:p.bankDebt,totalBorrowed:p.totalBorrowed,totalRepaid:p.totalRepaid,bankVersion:p.bankVersion,
         eliminatedHand:p.eliminatedHand,eliminationStack:p.eliminationStack,showFolded:p.showFolded,lastAction:p.lastAction,
         commandSeq:room.people.get(p.id)?.commandSeq||0,position:g.positions?.[p.id]||null,
         privateReveal:!!g.privateReveals?.[p.id]?.includes(viewer),
-        holeCards:p.id===viewer||(reveal&&(!p.folded||p.showFolded))||g.privateReveals?.[p.id]?.includes(viewer)?p.holeCards:[]}))};
+        holeCards:p.id===viewer||(reveal&&((g.showdownOccurred===true&&!p.folded)||p.showFolded))||g.privateReveals?.[p.id]?.includes(viewer)?p.holeCards:[]}))};
   }
   snapshot(room,ws){
     const events=room.history.filter(event=>event.id>(ws.eventCursor||0)).slice(0,25);
@@ -164,7 +164,9 @@ class RoomManager {
       return result.ok?{...result,message:result.duplicate?'该笔操作已处理，请核对账户。':'银行操作成功，下一手请重新确认。'}:result;
     }
     if(data.type==='showFolded'){
-      const p=g.players.find(p=>p.id===person.id);if(g.phase!=='hand_over'||!p?.folded)return fail('当前不能亮牌');p.showFolded=!p.showFolded;return{ok:true};
+      const p=g.players.find(p=>p.id===person.id),optional=p?.folded||g.showdownOccurred===false&&g.winners.includes(person.id);
+      if(g.phase!=='hand_over'||data.handNumber!==g.handNumber||p?.holeCards.length!==2||!optional)return fail('当前不能亮牌');
+      p.showFolded=!p.showFolded;return{ok:true};
     }
     if(data.type==='action'||data.type==='raise')return this.act(room,person.id,data.type==='raise'?'raise':data.action,data.amount,data);
     return fail('未知操作');

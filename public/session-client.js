@@ -212,7 +212,7 @@
   playerAction=action=>{const state=lastSnapshot?.game;if(state)command('action',{action,handNumber:state.handNumber,revision:state.revision});};
   confirmRaise=()=>{raiseMode=false;const state=lastSnapshot?.game;if(state)command('raise',{amount:raiseValue,handNumber:state.handNumber,revision:state.revision});};
   nextHand=()=>{const state=lastSnapshot?.game;if(state)command('handReady',{handNumber:state.handNumber});};
-  toggleShowFolded=()=>command('showFolded');
+  toggleShowFolded=()=>{if(lastSnapshot?.game)command('showFolded',{handNumber:lastSnapshot.game.handNumber});};
   finishSession=()=>{if(isHost)command('endSession');};
   submitBank=kind=>{
     const state=lastSnapshot?.game,p=state?.players.find(p=>p.id===mySeatId);if(!p)return;
