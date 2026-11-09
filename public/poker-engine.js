@@ -79,8 +79,8 @@ function cmpHand(a,b) {
   }
   function createGame(players, bigBlind, options = {}) {
     return { players: players.slice().sort((a,b)=>a.id-b.id).map(p => ({ ...p, holeCards: [], currentBet: 0, totalBet: 0, eliminatedHand: null, eliminationStack: null,
-      initialChips:p.chips,bankDebt:0,totalBorrowed:0,totalRepaid:0,bankVersion:0,lastBankRequest:null,chipsAfterHand:null })),
-      allowBuyIn:options.allowBuyIn===true,hostSeatId:options.hostSeatId??0,endRequested:false,bankLog:[],bankSequence:0,
+      initialChips:p.chips,bankDebt:0,totalBorrowed:0,totalRepaid:0,bankVersion:0,lastBankRequest:null,chipsAfterHand:null,borrowHandNumber:-1,borrowedThisHand:0 })),
+      allowBuyIn:options.allowBuyIn===true,loanPerHandLimit:validLoanLimit(options.loanPerHandLimit)?options.loanPerHandLimit??null:null,loanTotalLimit:validLoanLimit(options.loanTotalLimit)?options.loanTotalLimit??null:null,hostSeatId:options.hostSeatId??0,endRequested:false,bankLog:[],bankSequence:0,
       autoDeck:options.autoDeck===true,deckMode:options.deckMode||'auto',variant:'standard',blindMode:options.blindMode||'auto',blindRule:'standard',blindSeats:null,runTwiceEnabled:options.runTwiceEnabled===true,
       initialTotal:players.reduce((sum,p)=>sum+p.chips,0),
       deck: [], communityCards: [], pot: 0, currentBet: 0, minRaise: bigBlind,
@@ -119,7 +119,7 @@ function cmpHand(a,b) {
     if (g.phase==='hand_over' && !allConfirmed(g)) return false;
     if (g.players.filter(p=>!p.disconnected&&p.connected!==false&&(p.chips>0||(g.allowBuyIn&&p.isAI))).length<2) return false;
     if(g.allowBuyIn)for(const p of g.players) {
-      if(p.isAI&&!p.disconnected&&p.chips===0)bankTransaction(g,p.id,'borrow',p.initialChips,{handNumber:g.handNumber,bankVersion:p.bankVersion,requestId:`ai-${g.handNumber}-${p.id}`});
+      if(p.isAI&&!p.disconnected&&p.chips===0){const amount=Math.min(p.initialChips,loanAllowance(g,p));if(amount>0)bankTransaction(g,p.id,'borrow',amount,{handNumber:g.handNumber,bankVersion:p.bankVersion,requestId:`ai-${g.handNumber}-${p.id}`});}
     }
     const participating=g.players.filter(p=>p.chips>0&&!p.disconnected&&p.connected!==false);
     if(participating.length<2)return false;
@@ -325,6 +325,11 @@ function cmpHand(a,b) {
     sorted.forEach((p,i)=>ranked.push({...p,place:i>0&&compare(sorted[i-1],p)===0?ranked[i-1].place:i+1}));
     return ranked;
   }
+  function validLoanLimit(value){return value==null||Number.isSafeInteger(value)&&value>=0;}
+  function loanAllowance(g,p){
+    const used=p.borrowHandNumber===g.handNumber?p.borrowedThisHand||0:0;
+    return Math.max(0,Math.min(g.loanPerHandLimit==null?Infinity:g.loanPerHandLimit-used,g.loanTotalLimit==null?Infinity:g.loanTotalLimit-p.bankDebt));
+  }
   function bankTransaction(g,seatId,kind,amount,expected) {
     const fail=message=>({ok:false,message});
     if(!g||!g.allowBuyIn)return fail('本场未开启买入和银行');
@@ -338,12 +343,14 @@ function cmpHand(a,b) {
       return fail('重复请求的金额或类型不一致');
     }
     if(expected.handNumber!==g.handNumber||expected.bankVersion!==p.bankVersion)return fail('账户或牌局已更新，请核对后重试');
+    if(kind==='borrow'&&amount>loanAllowance(g,p))return fail('贷款超过本手剩余额度或总贷款剩余额度，请核对银行限额');
     if(kind==='repay'&&(amount>p.chips||amount>p.bankDebt))return fail('还款不能超过持有筹码或未还贷款');
     const delta=kind==='borrow'?amount:-amount;
     const borrowed=p.totalBorrowed+(kind==='borrow'?amount:0),repaid=p.totalRepaid+(kind==='repay'?amount:0);
     const issued=g.initialTotal+g.players.reduce((sum,other)=>sum+other.bankDebt,0)+delta;
     if(![p.chips+delta,p.bankDebt+delta,borrowed,repaid,issued,g.bankSequence+1].every(Number.isSafeInteger))return fail('金额超出可安全记录的范围');
     p.chips+=delta;p.bankDebt+=delta;p.totalBorrowed=borrowed;p.totalRepaid=repaid;p.bankVersion++;
+    if(kind==='borrow'){p.borrowedThisHand=(p.borrowHandNumber===g.handNumber?p.borrowedThisHand||0:0)+amount;p.borrowHandNumber=g.handNumber;}
     p.lastBankRequest={requestId:expected.requestId,kind,amount};
     g.nextHandReady=g.nextHandReady.filter(id=>id!==seatId);
     const entry={sequence:++g.bankSequence,seatId,kind,amount,handNumber:g.handNumber,debt:p.bankDebt};
@@ -364,5 +371,5 @@ function cmpHand(a,b) {
   function canRequestPeek(p) {
     return !!p&&!p.disconnected&&p.connected!==false&&((p.folded&&p.holeCards?.length===2)||(!p.isActive&&p.chips===0));
   }
-  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,bankTransaction,requestSessionEnd,canRequestPeek};
+  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,bankTransaction,requestSessionEnd,canRequestPeek,validLoanLimit,loanAllowance};
 });

@@ -47,7 +47,7 @@ const {passwordRecord}=require('../access');
     for(const count of[2,3,6]){
       const host=await open(null,0),room=await host.locator('#displayRoomCode').textContent(),pages=[host];
       for(let id=1;id<count;id++)pages.push(await open(room,id));
-      for(const page of pages){await page.locator('#waitRuleSummary').filter({hasText:'银行无限场'}).waitFor();}
+      for(const page of pages){await page.locator('#waitRuleSummary').filter({hasText:'银行买入场'}).waitFor();}
       await host.locator('#startBtn').click();
       const guest=pages[1];
       await guest.locator('#bankBtn').click();assert.equal(await guest.locator('#bankBorrowBtn').isDisabled(),true);

@@ -38,7 +38,7 @@
   <div class="bank-balances"><div>现有筹码<strong id="bankChips">0</strong></div><div>未还贷款<strong id="bankDebt">0</strong></div><div>净筹码<strong id="bankNet">0</strong></div></div>
   <label class="field-label" for="bankAmount">本次操作筹码</label><input id="bankAmount" class="room-code-input" type="number" min="1" step="1" inputmode="numeric" value="1000">
   <div class="bank-actions"><button id="bankBorrowBtn" class="home-btn btn-create" onclick="submitBank('borrow')">贷款买入</button><button id="bankRepayBtn" class="home-btn btn-join" onclick="submitBank('repay')">归还贷款</button></div>
-  <p id="bankStatus" class="bank-note" role="status" aria-live="polite"></p><div class="panel-kicker">本场最近记录</div><div id="bankHistory" class="bank-history"></div>
+  <p id="bankLimits" class="bank-note"></p><p id="bankStatus" class="bank-note" role="status" aria-live="polite"></p><div class="panel-kicker">本场最近记录</div><div id="bankHistory" class="bank-history"></div>
 </dialog>
 <dialog id="socialDialog" class="social-dialog" aria-labelledby="socialTitle">
   <header class="social-header"><div class="social-heading"><span class="social-emblem" aria-hidden="true">♠</span><div><span class="social-eyebrow">THE RIVER · FRIENDS AT THE TABLE</span><h2 id="socialTitle">牌桌互动<span>好牌，也要好气氛。</span></h2></div></div><button class="social-close" onclick="document.getElementById('socialDialog').close()" aria-label="关闭互动">×</button></header>
@@ -134,6 +134,10 @@
         <span class="setting-label">允许买入</span>
         <select id="allowBuyInSel" class="mini-select" onchange="onSettingsChange()"><option value="no" selected>否 · 淘汰赛</option><option value="yes">是 · 银行无限场</option></select>
       </div>
+      <div class="setting-row"><label class="setting-label" for="loanPerHandLimit">每手贷款限额</label><input id="loanPerHandLimit" class="mini-select" list="loanLimitOptions" value="无限" inputmode="numeric" onchange="onSettingsChange()" title="每位玩家每手累计借入上限；0禁止贷款，清空或选无限表示不限"></div>
+      <div class="setting-row"><label class="setting-label" for="loanTotalLimit">总贷款限额</label><input id="loanTotalLimit" class="mini-select" list="loanLimitOptions" value="无限" inputmode="numeric" onchange="onSettingsChange()" title="每位玩家未还本金上限；还款释放总额度"></div>
+      <datalist id="loanLimitOptions"><option value="无限"></option><option value="0"></option><option value="500"></option><option value="1000"></option><option value="2000"></option><option value="5000"></option><option value="10000"></option></datalist>
+      <p class="bank-note">限额按每人计算，可选或输入任意非负整数；清空表示无限。还款不恢复本手额度。</p>
       <div class="setting-row">
         <span class="setting-label">最少剩余</span>
         <select id="minPlayersSel" class="mini-select" onchange="onSettingsChange()">
@@ -392,7 +396,7 @@ function fmtCardSmall(c) {
 }
 
 function renderSeats() {
-  document.getElementById('waitRuleSummary').textContent=settings.allowBuyIn?'银行无限场 · 可贷款买入，无破产淘汰，房主主动结算 · 净筹码排名':'淘汰赛 · 不允许中途买入，按筹码及出局先后排名';
+  document.getElementById('waitRuleSummary').textContent=settings.allowBuyIn?`银行买入场 · 无破产淘汰 · 每人每手贷款 ${settings.loanPerHandLimit??'无限'} / 未还本金上限 ${settings.loanTotalLimit??'无限'} · 净筹码排名`:'淘汰赛 · 不允许中途买入，按筹码及出局先后排名';
   let html = '';
   for (let i = 0; i < maxPlayers; i++) {
     const s = seats[i];
@@ -784,7 +788,9 @@ function renderBank(state) {
   document.getElementById('bankDebt').textContent=p.bankDebt;
   document.getElementById('bankNet').textContent=p.chips-p.bankDebt;
   const available=state.phase==='hand_over'&&!state.endRequested&&wsConnected&&!bankPending;
-  document.getElementById('bankBorrowBtn').disabled=!available;
+  const allowance=PokerEngine.loanAllowance(state,p),used=p.borrowHandNumber===state.handNumber?p.borrowedThisHand||0:0;
+  document.getElementById('bankLimits').textContent=`每人每手贷款上限：${state.loanPerHandLimit??'无限'}（本手已借 ${used}） · 未还本金上限：${state.loanTotalLimit??'无限'} · 当前可再借：${Number.isFinite(allowance)?allowance:'无限'}。还款不恢复本手额度。`;
+  document.getElementById('bankBorrowBtn').disabled=!available||allowance===0;
   document.getElementById('bankRepayBtn').disabled=!available||p.bankDebt===0||p.chips===0;
   document.getElementById('bankStatus').textContent=state.endRequested?'整场正在结算或已结束，银行不再接受交易。':PokerEngine.betting(state)?'本手进行中，仅可查看账户；本手结束后可借还款。':bankPending?'银行正在确认操作…':bankNotice||'贷款增加筹码和欠款；还款同时扣减两者。交易后需要重新确认下一局。';
   document.getElementById('bankHistory').innerHTML=(state.bankLog||[]).filter(entry=>entry.seatId===mySeatId).slice(-10).reverse().map(entry=>`<div class="bank-entry"><span>第 ${entry.handNumber} 手 · ${entry.kind==='borrow'?'贷款买入':'还款'}</span><strong>${entry.kind==='borrow'?'+':'−'}${entry.amount}</strong><small>操作后欠款 ${entry.debt}</small></div>`).join('')||'<p class="bank-note">本场暂无借还款记录</p>';
@@ -1116,6 +1122,10 @@ function changeMaxPlayers(d) {
 }
 function onSettingsChange() {
   if(g)return;
+  const readLimit=id=>{const raw=document.getElementById(id).value.trim();return raw===''||raw==='无限'?null:/^\d+$/.test(raw)?Number(raw):NaN;};
+  const perHand=readLimit('loanPerHandLimit'),total=readLimit('loanTotalLimit');
+  if(!PokerEngine.validLoanLimit(perHand)||!PokerEngine.validLoanLimit(total)){alert('贷款限额请输入0或正整数，或选择“无限”');return;}
+  settings.loanPerHandLimit=perHand;settings.loanTotalLimit=total;
   settings.bigBlind = parseInt(document.getElementById('bigBlindSel').value);
   settings.initChips = parseInt(document.getElementById('initChipsSel').value);
   settings.minPlayers = parseInt(document.getElementById('minPlayersSel').value);
