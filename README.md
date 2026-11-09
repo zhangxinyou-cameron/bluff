@@ -2,6 +2,20 @@
 
 供朋友联机娱乐的私人德州扑克服务器。Node.js 统一管理规则、账户和回合，手机与电脑通过网页参与，支持 2—8 名真人／人机。
 
+代码同步维护于 [Gitee](https://gitee.com/zhang-xinyou/bluff) 和 [GitHub](https://github.com/zhangxinyou-cameron/bluff)。
+
+## 双仓库更新
+
+本地统一在 `master` 开发，提交并更新 `CHANGELOG.md` 后运行：
+
+```powershell
+npm run push:all
+```
+
+命令将同一提交推送至 `origin/master`（Gitee）和 `github/main`（GitHub），并核对两个远端的提交哈希。一方失败时会继续尝试另一方并返回失败状态；解决网络或登录问题后重新运行即可。普通 `git push` 仍只更新当前上游，后续请统一使用上述命令。
+
+新克隆的项目需按克隆来源配置两个远端：`origin` 指向 Gitee 地址，`github` 指向 GitHub 地址。两边的 Git 登录分别由本机凭据管理器处理。`GIT_EXECUTABLE` 可指定 Git 程序完整路径。GitHub 连通需要代理时，在本机 Git 配置对应主机的代理；代理地址与凭据不写入仓库。
+
 ## 启动
 
 当前主要在 Windows + Node.js 22 + Chrome 验证。
