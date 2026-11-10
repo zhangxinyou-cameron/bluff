@@ -191,7 +191,7 @@ class RoomManager {
   }
   tryStart(room){if(room.game?.phase==='hand_over'&&!this.finished(room)&&E.allConfirmed(room.game))this.start(room);}
   pace(room,kind,fromCards,duration){
-    const timeline=kind==='runout'&&room.game.showdownOccurred?RunoutTimeline.build(fromCards,room.game.runoutBoards?.length||1,this.runoutTimingOverride??room.settings.runoutDelayMs??3000):null;
+    const timeline=kind==='runout'&&room.game.showdownOccurred?RunoutTimeline.build(fromCards,room.game.runoutBoards?.length||1,this.runoutTimingOverride??room.settings.runoutDelayMs??3000,this.runoutTimingOverride??5000):null;
     if(timeline)duration=timeline.duration;
     const now=Date.now();room.blockedUntil=now+Math.max(0,duration);
     room.presentation=kind?{id:`${room.game.handNumber}-${room.game.revision}-${kind}`,kind,fromCards,startedAt:now,until:room.blockedUntil,duration}:null;

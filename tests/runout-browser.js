@@ -15,11 +15,12 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
       if(hand===1){await raise(3,2);await raise(3,3);await raise(4,4);assert.ok(room.history.some(e=>e.label?.startsWith('3-BET')));assert.ok(room.history.some(e=>e.label?.startsWith('4-BET')));}
       await act('allin');await act('call');await host.locator('#runoutPanel').waitFor({state:'visible'});
       if(hand===1){await host.locator('#voteOnceBtn').click();await idle(host);}else for(const page of pages){await page.locator('#voteTwiceBtn').click();await idle(page);}
-      const started=room.presentation.startedAt,duration=room.presentation.duration;assert.equal(duration,hand===1?12000:21000);
+      const started=room.presentation.startedAt,duration=room.presentation.duration;assert.equal(duration,hand===1?14000:23000);
       const frames=hand===1?[[0],[3],[4],[5]]:[[0],[3],[4],[5],[5,3],[5,4],[5,5]];
       for(let index=0;index<frames.length;index++){
         const lengths=frames[index];for(const page of pages)await page.waitForFunction(lengths=>{const root=document.getElementById('communityCards'),rows=[...root.querySelectorAll('.runout-board')],counts=rows.length?rows.map(r=>r.querySelectorAll('.card:not(.card-empty)').length):[root.querySelectorAll('.card:not(.card-empty)').length];return JSON.stringify(counts)===JSON.stringify(lengths);},lengths);
-        assert.ok(Date.now()-started>=index*3000-100);for(const page of pages)assert.equal(await page.locator('#resultScreen').isVisible(),false);
+        assert.ok(Date.now()-started>=(index===0?0:5000+(index-1)*3000)-100);for(const page of pages)assert.equal(await page.locator('#resultScreen').isVisible(),false);
+        if(index===0){for(const page of pages){assert.equal(await page.locator('.player-card .hole-cards .card:not(.card-back)').count(),4);await page.locator('#actionAnnouncement').filter({hasText:'手牌已亮'}).waitFor();}await host.waitForTimeout(1500);await pages[1].reload();await pages[1].waitForFunction(()=>wsConnected&&clientGameState?.communityCards.length===0);assert.ok(Date.now()-started<5000);}
         if(hand===1&&index===2){await pages[1].reload();await pages[1].waitForFunction(()=>wsConnected&&clientGameState?.communityCards.length===4);assert.equal(await pages[1].locator('#resultScreen').isVisible(),false);}
       }
       for(const page of pages)await page.locator('#resultScreen').waitFor({state:'visible'});assert.ok(Date.now()-started>=duration-100);roomManager.check(room);

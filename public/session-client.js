@@ -122,7 +122,7 @@
     const last=events.filter(event=>event.kind==='action'&&event.hand===state.handNumber&&event.street===state.phase).at(-1);
     node('actionAnnouncement').textContent=last?last.text:`第 ${state.handNumber} 手 · ${PHASE_NAMES[state.phase]||'本轮'} · 等待行动`;
     node('actionAnnouncement').dataset.action=last?.action||'deal';
-    if(presentation?.timeline&&remaining>0){const count=state.communityCards.length,board=state.runoutBoards?.length||1;node('phaseText').textContent='全押跑马';node('actionAnnouncement').textContent=`${presentation.timeline.boardCount>1?'第 '+board+' 组 · ':''}${count>=5?'河牌已开 · 停留看牌':count===4?'转牌已开':count===3?'翻牌已开':'等待翻牌'} · 慢慢揭晓`;}
+    if(presentation?.timeline&&remaining>0){const count=state.communityCards.length,board=state.runoutBoards?.length||1,showingHands=now()-presentation.startedAt<presentation.timeline.showHandsMs;node('phaseText').textContent=showingHands?'亮牌展示':'全押跑马';node('actionAnnouncement').textContent=showingHands?'争池玩家手牌已亮 · 先看牌再跑马':`${presentation.timeline.boardCount>1?'第 '+board+' 组 · ':''}${count>=5?'河牌已开 · 停留看牌':count===4?'转牌已开':count===3?'翻牌已开':'等待翻牌'} · 慢慢揭晓`;}
     if(data.paused)status('异常检测已暂停牌局以保护筹码，请联系房主检查','error');
     if(node('bankDialog').open){renderBank(state);if(locked&&state.phase==='hand_over'){node('bankBorrowBtn').disabled=true;node('bankRepayBtn').disabled=true;if(remaining>0)node('bankStatus').textContent='结算过场中，稍后可借还款。';}}
     window.RiverTable?.render(data,locked);
@@ -132,7 +132,7 @@
     const state=lastSnapshot?.game;if(!state)return;
     window.RiverTable?.clock(lastSnapshot,now(),!!pending||!wsConnected);
     const remaining=Math.max(0,(lastSnapshot.interactiveAt||0)-now());
-    if(remaining>0&&lastSnapshot.presentation?.timeline){const p=lastSnapshot.presentation,elapsed=now()-p.startedAt,next=p.timeline.steps.find(step=>step.at>elapsed);node('actionHint').textContent=next?`${((next.at-elapsed)/1000).toFixed(1)} 秒后揭晓下一阶段`:`停留看牌 · ${(remaining/1000).toFixed(1)} 秒后结算`;return;}
+    if(remaining>0&&lastSnapshot.presentation?.timeline){const p=lastSnapshot.presentation,elapsed=now()-p.startedAt,next=p.timeline.steps.find(step=>step.at>elapsed);node('actionHint').textContent=elapsed<p.timeline.showHandsMs?`争池手牌已亮 · ${((p.timeline.showHandsMs-elapsed)/1000).toFixed(1)} 秒后开牌`:next?`${((next.at-elapsed)/1000).toFixed(1)} 秒后揭晓下一阶段`:`停留看牌 · ${(remaining/1000).toFixed(1)} 秒后结算`;return;}
     if(remaining>0){node('actionHint').textContent=`${lastSnapshot.presentation?'正在发牌':'正在确认上一操作'} · ${(remaining/1000).toFixed(1)} 秒后继续`;return;}
     if(!wsConnected){node('actionHint').textContent='正在恢复连接，暂时不能操作';return;}
     if(pending){node('actionHint').textContent='操作已发送，正在确认；请勿重复点击';return;}
