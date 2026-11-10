@@ -39,12 +39,12 @@ const {chromium}=require('playwright');const{server,wss,access,roomManager}=requ
     await host.locator('#startBtn').click();await pages[1].locator('.action-raise').waitFor();assert.equal(room.game.variant,'short');
     assert.equal(await host.locator('#voiceDock').count(),0);checks.push('microphone UI and relay removed');
     for(const [width,height]of[[390,844],[320,568],[844,390],[1280,800]]){
-      const page=pages[1];await page.setViewportSize({width,height});await page.evaluate(()=>document.getElementById('playWorkspace').scrollIntoView({block:'start'}));
+      const page=pages[1];await page.setViewportSize({width,height});await page.waitForFunction(height=>parseInt(document.documentElement.style.getPropertyValue('--play-height'),10)===height,height);await page.evaluate(()=>document.getElementById('playWorkspace').scrollIntoView({block:'start',behavior:'instant'}));
       const boxes=await page.evaluate(()=>({height:innerHeight,width:innerWidth,pageWidth:document.documentElement.scrollWidth,rects:['actionPanel','winRateText','chatInput'].map(id=>{const r=document.getElementById(id).getBoundingClientRect();return{id,top:r.top,bottom:r.bottom,height:r.height};})}));
       assert.ok(boxes.pageWidth<=width,JSON.stringify(boxes));for(const b of boxes.rects)assert.ok(b.height>0&&b.top>=-1&&b.bottom<=height+1,JSON.stringify(boxes));
       if(width===390||width===320||width===1280)await page.screenshot({path:path.join(__dirname,'screenshots',`features-play-${width}.png`)});
     }
-    await pages[1].setViewportSize({width:390,height:844});await pages[1].evaluate(()=>document.getElementById('playWorkspace').scrollIntoView({block:'start'}));
+    await pages[1].setViewportSize({width:390,height:844});await pages[1].waitForFunction(()=>parseInt(document.documentElement.style.getPropertyValue('--play-height'),10)===844);await pages[1].evaluate(()=>document.getElementById('playWorkspace').scrollIntoView({block:'start',behavior:'instant'}));
     assert.equal(await pages[1].locator('#turnCue').getAttribute('data-active'),'true');checks.push('chat, win rate, action controls and clear turn countdown fit one viewport at four sizes');
     await pages[1].locator('.action-raise').click();const expectedPotRaise=Math.max(room.game.currentBet+room.game.minRaise,room.game.currentBet+Math.round(.75*(room.game.pot+Math.max(0,room.game.currentBet-room.game.players[1].currentBet))));await pages[1].locator('.raise-presets button[data-pot-fraction="0.75"]').click();assert.equal(await pages[1].evaluate(()=>raiseValue),expectedPotRaise);
     await pages[1].screenshot({path:path.join(__dirname,'screenshots','features-raise-mobile.png')});

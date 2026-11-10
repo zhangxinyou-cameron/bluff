@@ -128,7 +128,7 @@ function cmpHand(a,b) {
     g.runoutVote=null;g.runoutDecision=false;g.runoutBoards=null;g.peekRequests=[];g.privateReveals={};g.tips=[];
     g.handNumber++; g.revision++; g.deck=shuffle(createDeck(g.variant), random); g.communityCards=[];
     g.pot=0; g.currentBet=g.bigBlind; g.minRaise=g.bigBlind;
-    g.phase='pre_flop'; g.winners=[]; g.pots=[]; g.nextHandReady=[];g.showdownOccurred=false;
+    g.phase='pre_flop';g.betLevel=1; g.winners=[]; g.pots=[]; g.nextHandReady=[];g.showdownOccurred=false;
     for (const p of g.players) Object.assign(p, { holeCards: [], currentBet: 0, totalBet: 0,
       folded: !!p.disconnected||p.connected===false, allIn: false, handResult: null, handResults:null, isActive: p.chips>0&&!p.disconnected&&p.connected!==false,
       lastAction:null,
@@ -188,7 +188,7 @@ function cmpHand(a,b) {
     commit(g,p,total-p.currentBet);
     if (p.currentBet>oldBet) {
       const raise=p.currentBet-oldBet;
-      if (raise>=g.minRaise) g.minRaise=raise;
+      if (raise>=g.minRaise){g.minRaise=raise;g.betLevel=(g.betLevel||0)+1;}
       g.currentBet=p.currentBet;
     }
     p.acted=true;
@@ -217,7 +217,7 @@ function cmpHand(a,b) {
   function endRound(g) {
     if (g.phase==='river') { settle(g,true); return; }
     for (const p of g.players) { p.currentBet=0; p.acted=false; p.lastActionBet=null; }
-    g.currentBet=0; g.minRaise=g.bigBlind;
+    g.currentBet=0; g.minRaise=g.bigBlind;g.betLevel=0;
     dealStreet(g);
     g.currentPlayerIndex=g.dealerIndex;
     advance(g);

@@ -2,7 +2,8 @@ const crypto=require('node:crypto');
 const E=require('./public/poker-engine');
 const PokerAI=require('./poker-ai');
 const Avatars=require('./public/avatars');
-const DEFAULT_TIMING={deal:1800,street:1200,runout:2800,action:900,ai:1100,turn:60000,offlineTurn:30000,reserve:1800000,vote:20000};
+const RunoutTimeline=require('./public/runout-timeline');
+const DEFAULT_TIMING={deal:1800,street:1200,runout:3000,action:900,ai:1100,turn:60000,offlineTurn:30000,reserve:1800000,vote:20000};
 const PHASE={pre_flop:'翻牌前',flop:'翻牌',turn:'转牌',river:'河牌',hand_over:'结算'};
 const ACTION={fold:'弃牌 FOLD',check:'过牌 CHECK',call:'跟注 CALL',raise:'加注 RAISE',allin:'全押 ALL IN'};
 const send=(ws,data)=>{if(ws?.readyState===1)ws.send(JSON.stringify(data));};
@@ -13,7 +14,7 @@ class RoomManager {
     this.connections=connections;this.games=new Map();this.timing={...DEFAULT_TIMING};
     this.timer=setInterval(()=>this.tick(),250);this.timer.unref();
   }
-  configureTimings(values){Object.assign(this.timing,values);}
+  configureTimings(values){Object.assign(this.timing,values);if(Object.hasOwn(values,'runout'))this.runoutTimingOverride=values.runout;}
   event(room,kind,text,extra={}){
     const event={id:room.history.length+1,kind,text,time:Date.now(),hand:room.game?.handNumber||0,phase:room.game?.phase||'waiting',...extra};
     room.history.push(event);return event;
@@ -71,13 +72,15 @@ class RoomManager {
   finished(room){const g=room.game;if(!g)return false;if(g.allowBuyIn)return g.phase==='tournament_over';const alive=g.players.filter(p=>p.chips>0&&!p.disconnected);return alive.length<2||(g.players.length>room.settings.minPlayers&&alive.length<=room.settings.minPlayers);}
   serialize(room,viewer){
     const g=room.game;if(!g)return null;
+    const timeline=room.presentation?.timeline,frame=timeline&&Date.now()<room.blockedUntil?RunoutTimeline.frame(timeline,Date.now()-room.presentation.startedAt):null;
+    const boards=g.runoutBoards||[g.communityCards],visible=frame?boards.map((board,i)=>board.slice(0,frame.counts[i])):boards;
     const reveal=['hand_over','showdown','tournament_over'].includes(g.phase);
-    return{handNumber:g.handNumber,phase:g.phase,pot:g.pot,currentBet:g.currentBet,dealerIndex:g.dealerIndex,currentPlayerIndex:g.currentPlayerIndex,
-      communityCards:g.communityCards,minRaise:g.minRaise,bigBlind:g.bigBlind,revision:g.revision,nextHandReady:g.nextHandReady,winners:g.winners,pots:g.pots,showWinRate:g.showWinRate!==false,
-      allowBuyIn:g.allowBuyIn,loanPerHandLimit:g.loanPerHandLimit,loanTotalLimit:g.loanTotalLimit,endRequested:g.endRequested,bankLog:g.bankLog,bankSequence:g.bankSequence,variant:g.variant,blindRule:g.blindRule,blindSeats:g.blindSeats,actionOrder:g.actionOrder,runoutBoards:g.runoutBoards,showdownOccurred:g.showdownOccurred===true,
-      players:g.players.map(p=>({id:p.id,name:p.name,avatar:p.avatar||'default',chips:p.chips,currentBet:p.currentBet,totalBet:p.totalBet,folded:p.folded,allIn:p.allIn,isActive:p.isActive,
-        handResult:p.handResult,handResults:p.handResults,acted:p.acted,canRaise:E.canRaise(g,p),disconnected:!!p.disconnected,connected:p.connected!==false,isAI:!!p.isAI,
-        chipsBeforeHand:p.chipsBeforeHand,chipsAfterHand:p.chipsAfterHand,initialChips:p.initialChips,bankDebt:p.bankDebt,totalBorrowed:p.totalBorrowed,totalRepaid:p.totalRepaid,bankVersion:p.bankVersion,borrowHandNumber:p.borrowHandNumber,borrowedThisHand:p.borrowedThisHand,
+    return{handNumber:g.handNumber,phase:g.phase,currentBet:g.currentBet,dealerIndex:g.dealerIndex,currentPlayerIndex:g.currentPlayerIndex,
+      communityCards:frame?visible[frame.board]:g.communityCards,minRaise:g.minRaise,bigBlind:g.bigBlind,betLevel:g.betLevel,pot:frame?g.players.reduce((sum,p)=>sum+p.totalBet,0):g.pot,revision:g.revision,nextHandReady:g.nextHandReady,winners:frame?[]:g.winners,pots:frame?[]:g.pots,showWinRate:g.showWinRate!==false,
+      allowBuyIn:g.allowBuyIn,loanPerHandLimit:g.loanPerHandLimit,loanTotalLimit:g.loanTotalLimit,endRequested:g.endRequested,bankLog:g.bankLog,bankSequence:g.bankSequence,variant:g.variant,blindRule:g.blindRule,blindSeats:g.blindSeats,actionOrder:g.actionOrder,runoutBoards:g.runoutBoards?(frame?visible.slice(0,frame.board+1):g.runoutBoards):null,showdownOccurred:g.showdownOccurred===true,
+      players:g.players.map(p=>({id:p.id,name:p.name,avatar:p.avatar||'default',chips:frame&&Number.isSafeInteger(p.chipsBeforeHand)?p.chipsBeforeHand-p.totalBet:p.chips,currentBet:p.currentBet,totalBet:p.totalBet,folded:p.folded,allIn:p.allIn,isActive:p.isActive,
+        handResult:frame?null:p.handResult,handResults:frame?null:p.handResults,acted:p.acted,canRaise:E.canRaise(g,p),disconnected:!!p.disconnected,connected:p.connected!==false,isAI:!!p.isAI,
+        chipsBeforeHand:p.chipsBeforeHand,chipsAfterHand:frame?null:p.chipsAfterHand,initialChips:p.initialChips,bankDebt:p.bankDebt,totalBorrowed:p.totalBorrowed,totalRepaid:p.totalRepaid,bankVersion:p.bankVersion,borrowHandNumber:p.borrowHandNumber,borrowedThisHand:p.borrowedThisHand,
         eliminatedHand:p.eliminatedHand,eliminationStack:p.eliminationStack,showFolded:p.showFolded,lastAction:p.lastAction,
         commandSeq:room.people.get(p.id)?.commandSeq||0,peekThreshold:room.people.get(p.id)?.peekThreshold??null,position:g.positions?.[p.id]||null,
         privateReveal:!!g.privateReveals?.[p.id]?.includes(viewer),
@@ -127,10 +130,12 @@ class RoomManager {
     if(data.type==='roomSettings'){
       if(person.id!==0||g)return fail('只有房主可在开局前设置规则');
       const s=data.settings||{};
+      if(s.runoutDelayMs!==undefined&&(!Number.isInteger(s.runoutDelayMs)||s.runoutDelayMs<0||s.runoutDelayMs>3000))return fail('跑马发牌间隔须在0至3000毫秒之间');
       if(s.showWinRate!==undefined&&typeof s.showWinRate!=='boolean')return fail('是否显示胜率设置无效');
       if(!E.validLoanLimit(s.loanPerHandLimit)||!E.validLoanLimit(s.loanTotalLimit))return fail('贷款限额须为0或正整数，无限额请选无限');
       if(![10,20,50,100].includes(s.bigBlind)||![1000,2000,5000].includes(s.initChips)||![1,2,3].includes(s.minPlayers))return fail('房间设置无效');
       room.settings={bigBlind:s.bigBlind,initChips:s.initChips,minPlayers:s.minPlayers,allowBuyIn:s.allowBuyIn===true,showWinRate:s.showWinRate!==false,loanPerHandLimit:s.loanPerHandLimit??null,loanTotalLimit:s.loanTotalLimit??null,deckMode:['auto','short','standard'].includes(s.deckMode)?s.deckMode:room.settings.deckMode,blindMode:['auto','ante','position','standard'].includes(s.blindMode)?s.blindMode:room.settings.blindMode};
+      room.settings.runoutDelayMs=s.runoutDelayMs??3000;
       const required=Math.max(...room.people.keys())+1;
       room.maxPlayers=Math.max(required,Math.min(8,Math.max(2,Math.floor(Number(data.maxPlayers)||4))));
       room.aiSlots={};for(let i=1;i<room.maxPlayers;i++)if(data.aiSlots?.[i]&&!room.people.has(i))room.aiSlots[i]=true;
@@ -186,22 +191,27 @@ class RoomManager {
   }
   tryStart(room){if(room.game?.phase==='hand_over'&&!this.finished(room)&&E.allConfirmed(room.game))this.start(room);}
   pace(room,kind,fromCards,duration){
+    const timeline=kind==='runout'&&room.game.showdownOccurred?RunoutTimeline.build(fromCards,room.game.runoutBoards?.length||1,this.runoutTimingOverride??room.settings.runoutDelayMs??3000):null;
+    if(timeline)duration=timeline.duration;
     const now=Date.now();room.blockedUntil=now+Math.max(0,duration);
     room.presentation=kind?{id:`${room.game.handNumber}-${room.game.revision}-${kind}`,kind,fromCards,startedAt:now,until:room.blockedUntil,duration}:null;
+    if(room.presentation&&timeline)room.presentation.timeline=timeline;
     room.aiDue=room.blockedUntil+this.timing.ai;room.deadline=room.blockedUntil+this.timing.turn;
   }
   act(room,seatId,action,amount,expected,automatic=false){
-    const g=room.game,p=g.players.find(p=>p.id===seatId);const before=p&&{chips:p.chips,bet:p.currentBet,currentBet:g.currentBet,phase:g.phase,cards:g.communityCards.length};
+    const g=room.game,p=g.players.find(p=>p.id===seatId);const before=p&&{chips:p.chips,bet:p.currentBet,currentBet:g.currentBet,minRaise:g.minRaise,betLevel:g.betLevel||0,phase:g.phase,cards:g.communityCards.length};
     const result=E.applyAction(g,seatId,action,amount,expected);if(!result.ok)return result;
     const paid=action==='call'?Math.min(before.chips,Math.max(0,before.currentBet-before.bet)):action==='allin'?before.chips:action==='raise'?amount-before.bet:0;
-    const label=action==='raise'?`${ACTION[action]} 至 ${amount}`:action==='allin'?`${ACTION[action]} 至 ${before.chips+before.bet}`:action==='call'?`${ACTION[action]} ${paid}`:ACTION[action];
+    const level=before.bet+paid-before.currentBet>=before.minRaise&&['raise','allin'].includes(action)?before.betLevel+1:0;
+    const label=(level?`${level}-BET · `:'')+(action==='raise'?`${ACTION[action]} 至 ${amount}`:action==='allin'?`${ACTION[action]} 至 ${before.chips+before.bet}`:action==='call'?`${ACTION[action]} ${paid}`:ACTION[action]);
     const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),raised:before.bet+paid>before.currentBet,label,street:before.phase,automatic});
     // The closing action belongs in history, never in the new street's markers.
     if(g.phase===before.phase)p.lastAction={id:event.id,action,label,hand:g.handNumber,phase:before.phase,automatic};
     else for(const player of g.players)player.lastAction=null;
     if(g.communityCards.length>before.cards)this.event(room,'street',`${PHASE[g.phase]||'公共牌发完'} · ${g.communityCards.map(c=>'♠♥♣♦'[c.suit]+({11:'J',12:'Q',13:'K',14:'A'}[c.rank]||c.rank)).join(' ')}`);
     const changed=g.communityCards.length>before.cards;
-    this.pace(room,changed?(g.communityCards.length-before.cards>3?'runout':g.phase==='hand_over'?'runout':'street'):null,before.cards,changed?(g.phase==='hand_over'?this.timing.runout:this.timing.street):this.timing.action);
+    const allinFinish=['hand_over','tournament_over'].includes(g.phase)&&g.showdownOccurred&&g.players.some(p=>p.allIn);
+    this.pace(room,allinFinish?'runout':changed?(g.communityCards.length-before.cards>3?'runout':g.phase==='hand_over'?'runout':'street'):null,before.cards,changed?(g.phase==='hand_over'?this.timing.runout:this.timing.street):this.timing.action);
     if(g.phase==='runout_vote')this.prepareVote(room);
     else if(['hand_over','tournament_over'].includes(g.phase))this.recordSettlement(room);
     return result;
@@ -244,6 +254,7 @@ class RoomManager {
         if(![...room.people.values()].some(p=>p.connected)&&now-room.lastActivity>this.timing.reserve){this.closeRoom(room.code,'房间长时间无人在线，已结束');continue;}
         if(!g||room.paused)continue;
         if(room.presentation&&now>=room.blockedUntil){room.presentation=null;this.publish(room);}
+        if(room.presentation?.timeline&&now<room.blockedUntil){const key=JSON.stringify(RunoutTimeline.frame(room.presentation.timeline,now-room.presentation.startedAt).counts);if(key!==room.presentation.frameKey){room.presentation.frameKey=key;this.publish(room);}}
         if(g.phase==='runout_vote'){this.prepareVote(room);if(g.runoutVote&&now>=g.runoutVote.expiresAt)this.finishVote(room,false,'协商超时，本手发一次牌');this.check(room);if(g.phase!=='runout_vote')this.publish(room);continue;}
         if(now<room.blockedUntil)continue;
         if(!E.betting(g))continue;

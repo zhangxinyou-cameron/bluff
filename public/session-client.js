@@ -85,6 +85,7 @@
       for(const [id,value]of[['bigBlindSel',settings.bigBlind],['initChipsSel',settings.initChips],['minPlayersSel',settings.minPlayers],['allowBuyInSel',settings.allowBuyIn?'yes':'no']])node(id).value=String(value);
       node('minPlayersSel').disabled=settings.allowBuyIn;
       node('showWinRateSel').value=settings.showWinRate===false?'no':'yes';node('showWinRateSel').disabled=!isHost;
+      node('runoutDelaySel').value=String(settings.runoutDelayMs??3000);node('runoutDelaySel').disabled=!isHost;
       for(const [id,key]of [['loanPerHandLimit','loanPerHandLimit'],['loanTotalLimit','loanTotalLimit']]){if(document.activeElement!==node(id))node(id).value=settings[key]==null?'无限':String(settings[key]);node(id).disabled=!isHost||!settings.allowBuyIn;}
       const me=seats[mySeatId];
       setConnectionStatus(isHost?'房间已创建，等待玩家加入...':me?.ready?'已准备，等待房主开始游戏':'已连接房间，请点击准备');
@@ -95,7 +96,9 @@
     let view=state;
     if(remaining>0&&['hand_over','tournament_over'].includes(state.phase))view={...state,phase:'showdown'};
     const presentation=data.presentation;
-    if(presentation&&remaining>0){
+    if(presentation?.timeline&&remaining>0){
+      view={...state,phase:'showdown'};node('dealingStage').hidden=true;
+    }else if(presentation&&remaining>0){
       const elapsed=now()-presentation.startedAt,from=presentation.fromCards||0,total=state.communityCards.length-from;
       const shown=presentation.kind==='hole'?0:Math.max(0,Math.min(total,Math.floor((elapsed-200)/Math.max(1,presentation.duration*.72/Math.max(1,total)))+1));
       view={...view,communityCards:state.communityCards.slice(0,from+shown),dealing:presentation.kind==='hole'};
@@ -119,6 +122,7 @@
     const last=events.filter(event=>event.kind==='action'&&event.hand===state.handNumber&&event.street===state.phase).at(-1);
     node('actionAnnouncement').textContent=last?last.text:`第 ${state.handNumber} 手 · ${PHASE_NAMES[state.phase]||'本轮'} · 等待行动`;
     node('actionAnnouncement').dataset.action=last?.action||'deal';
+    if(presentation?.timeline&&remaining>0){const count=state.communityCards.length,board=state.runoutBoards?.length||1;node('phaseText').textContent='全押跑马';node('actionAnnouncement').textContent=`${presentation.timeline.boardCount>1?'第 '+board+' 组 · ':''}${count>=5?'河牌已开 · 停留看牌':count===4?'转牌已开':count===3?'翻牌已开':'等待翻牌'} · 慢慢揭晓`;}
     if(data.paused)status('异常检测已暂停牌局以保护筹码，请联系房主检查','error');
     if(node('bankDialog').open){renderBank(state);if(locked&&state.phase==='hand_over'){node('bankBorrowBtn').disabled=true;node('bankRepayBtn').disabled=true;if(remaining>0)node('bankStatus').textContent='结算过场中，稍后可借还款。';}}
     window.RiverTable?.render(data,locked);
@@ -128,6 +132,7 @@
     const state=lastSnapshot?.game;if(!state)return;
     window.RiverTable?.clock(lastSnapshot,now(),!!pending||!wsConnected);
     const remaining=Math.max(0,(lastSnapshot.interactiveAt||0)-now());
+    if(remaining>0&&lastSnapshot.presentation?.timeline){const p=lastSnapshot.presentation,elapsed=now()-p.startedAt,next=p.timeline.steps.find(step=>step.at>elapsed);node('actionHint').textContent=next?`${((next.at-elapsed)/1000).toFixed(1)} 秒后揭晓下一阶段`:`停留看牌 · ${(remaining/1000).toFixed(1)} 秒后结算`;return;}
     if(remaining>0){node('actionHint').textContent=`${lastSnapshot.presentation?'正在发牌':'正在确认上一操作'} · ${(remaining/1000).toFixed(1)} 秒后继续`;return;}
     if(!wsConnected){node('actionHint').textContent='正在恢复连接，暂时不能操作';return;}
     if(pending){node('actionHint').textContent='操作已发送，正在确认；请勿重复点击';return;}
