@@ -81,11 +81,11 @@
     el('peekSettingsBtn').textContent='看牌门槛 · '+(myThreshold()==null?'手动':myThreshold()+'筹码');
     el('positionGuide').hidden=!game?.actionOrder;
     if(game?.actionOrder){const row=(label,ids)=>`<div class="position-order"><strong>${label}</strong>${ids.map(id=>{const p=game.players.find(p=>p.id===id);return `<span class="position-chip ${id===mySeatId?'is-me':''}"><b>${esc(p.position?.label||'')}</b>${esc(p.name)}</span>`;}).join('<i aria-hidden="true">→</i>')}</div>`;
-      el('positionGuideContent').innerHTML=`<p>${game.blindRule==='ante'?'全员底注模式按BTN＋距离显示位置，翻前从庄家左手第一位开始。':game.blindRule==='position'?'自定义盲注：庄家左手第一位BB付1倍，第二位SB付半倍。':'标准位置制：庄家左手第一位SB付半倍，第二位BB付1倍；两人桌庄家兼任SB。'} 以下为开局顺序，实际行动跳过已弃牌、全押及未参与者。</p>${row('翻前',game.actionOrder.preflop)}${row('翻后',game.actionOrder.postflop)}`;}
+      el('positionGuideContent').innerHTML=`<p>${game.blindRule==='ante'?'全员底注模式按BTN＋距离显示位置，翻前从庄家左手第一位开始。':game.blindRule==='position'?'自定义盲注：庄家左手第一位BB付1倍，第二位SB付半倍。':'标准位置制：庄家左手第一位SB付半倍，第二位BB付1倍；两人桌庄家兼任SB。'} 以下为开局顺序，实际行动跳过已弃牌、梭哈及未参与者。</p>${row('翻前',game.actionOrder.preflop)}${row('翻后',game.actionOrder.postflop)}`;}
     for(const item of bubbles.values())showBubble(item);
     const vote=value.runoutVote,panel=el('runoutPanel');panel.hidden=game?.phase!=='runout_vote';
     if(!panel.hidden){const eligible=vote?.eligibleIds.includes(mySeatId),yes=vote?.yesIds.includes(mySeatId);
-      panel.innerHTML=`<div><strong>全押协商 · 发两次？</strong><span id="voteCountdown"></span><small>每个主池/边池各分两份；需全员同意，超时或拒绝则发一次。</small><span>${vote.yesIds.length}/${vote.eligibleIds.length} 已同意 · ${vote.eligibleIds.map(id=>esc(name(id))+(vote.yesIds.includes(id)?' ✓':'')).join('、')}</span></div>${eligible?`<button id="voteTwiceBtn" class="action-btn" ${yes||locked?'disabled':''} onclick="RiverTable.vote(true)">${yes?'已同意 · 等待他人':'同意发两次'}</button><button id="voteOnceBtn" class="action-btn" ${locked?'disabled':''} onclick="RiverTable.vote(false)">发一次</button>`:'<span>等待争池玩家协商</span>'}`;
+      panel.innerHTML=`<div><strong>梭哈协商 · 发两次？</strong><span id="voteCountdown"></span><small>每个主池/边池各分两份；需全员同意，超时或拒绝则发一次。</small><span>${vote.yesIds.length}/${vote.eligibleIds.length} 已同意 · ${vote.eligibleIds.map(id=>esc(name(id))+(vote.yesIds.includes(id)?' ✓':'')).join('、')}</span></div>${eligible?`<button id="voteTwiceBtn" class="action-btn" ${yes||locked?'disabled':''} onclick="RiverTable.vote(true)">${yes?'已同意 · 等待他人':'同意发两次'}</button><button id="voteOnceBtn" class="action-btn" ${locked?'disabled':''} onclick="RiverTable.vote(false)">发一次</button>`:'<span>等待争池玩家协商</span>'}`;
     }
   }
   function targetChanged(){

@@ -231,7 +231,7 @@
 const SUITS = ['♠','♥','♣','♦'];
 const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 const HAND_NAMES = {10:'皇家同花顺',9:'同花顺',8:'四条',7:'葫芦',6:'同花',5:'顺子',4:'三条',3:'两对',2:'一对',1:'高牌'};
-const PHASE_NAMES = {waiting:'等待',pre_flop:'翻牌前',flop:'翻牌',turn:'转牌',river:'河牌',runout_vote:'全押协商',showdown:'摊牌',hand_over:'结束'};
+const PHASE_NAMES = {waiting:'等待',pre_flop:'翻牌前',flop:'翻牌',turn:'转牌',river:'河牌',runout_vote:'梭哈协商',showdown:'摊牌',hand_over:'结束'};
 const QUICK_CHATS = ['拿到大牌了，快跑！','这牌我梭了！','跟注，看看你的牌','哇，又是皇家同花顺？','不送了，弃','river太骚了','下把我必赢','你这牌也敢跟？'];
 
 // ========== 联机状态 ==========
@@ -511,11 +511,9 @@ function renderGame(g) {
     const position=p.position;
     html += `<div class="player-name">${typeof RiverAvatars!=='undefined'?RiverAvatars.markup(p.avatar,p.name):`<span class="player-avatar" data-avatar="default">${p.isAI?'🤖':'♠'}</span>`}<span class="player-label" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span></div><div class="player-chips">${position?`<span class="player-position" title="${escapeHtml(position.description)} · 翻前第${position.preflop}位 / 翻后第${position.postflop}位">${escapeHtml(position.label)}</span>`:''}<span>💰${p.chips}</span></div>`;
     const currentAction=p.lastAction?.hand===g.handNumber&&p.lastAction.phase===g.phase?p.lastAction:null;
-    const actionText=currentAction?.label||(p.folded?'已弃牌':p.allIn?'已全押':!p.isActive?'本手旁观':'尚未行动');
+    const actionText=currentAction?.label||(p.folded?'已弃牌':p.allIn?'已梭哈':!p.isActive?'本手旁观':'尚未行动');
     html += `<div class="player-action move-${escapeHtml(currentAction?.action||'waiting')}">${escapeHtml(actionText)}${p.connected===false?' · 暂离':''}</div>`;
     if (p.currentBet>0) html += `<div class="player-bet">贡献:${p.currentBet}</div>`;
-    if (p.folded) html += `<div class="fold-tag">弃牌</div>`;
-    if (p.allIn) html += `<div class="allin-tag">全押</div>`;
     html += `<div class="hole-cards">${cardsHtml}</div>${p.privateReveal&&p.id!==mySeatId?'<span class="private-card-note">仅向你亮牌</span>':''}</div>`;
     seatHtml.set(p.id,html);
   });
@@ -579,8 +577,8 @@ function renderGame(g) {
     if (raiseValue > maxT) raiseValue = maxT;
     const presets=potRaisePresets(g,cp);
     const slider=raiseSliderSpec(g,cp);
-    let html = `<div class="raise-slider"><div class="raise-level">当前 ${g.betLevel||0}-BET · 本次加注为 ${(g.betLevel||0)+1}-BET · 滑条每格 ${slider.step}（小盲）</div><div class="raise-presets">${presets.map(({fraction,label,amount})=>`<button class="sound-button" data-pot-fraction="${fraction}" title="先跟注后，按底池 ${Math.round(fraction*100)}% 加注；受最小加注和筹码限制" onclick="RiverTable.raiseTo(${amount})"><span>${label}</span><small>至 ${amount}</small></button>`).join('')}${[3,4].map(multiple=>{const amount=Math.min(maxT,Math.max(minT,g.currentBet*multiple));return `<button class="sound-button" data-raise-multiple="${multiple}" onclick="RiverTable.raiseTo(${amount})"><span>${multiple}×当前注</span><small>至 ${amount}</small></button>`;}).join('')}</div><label class="raise-amount">加注至 <input id="raiseAmount" type="number" min="${minT}" max="${maxT}" value="${raiseValue}" inputmode="numeric" oninput="RiverTable.raiseInput(this.value)"><button class="sound-button" id="raiseMaxBtn" onclick="RiverTable.raiseTo(${maxT})" title="选择全部筹码，包括不足一格的零头">全押</button></label>
-      <input type="range" min="${slider.disabled?minT:slider.min}" max="${slider.disabled?minT:slider.max}" step="${slider.step}" value="${raiseValue}" ${slider.disabled?'disabled':''} title="按小盲 ${slider.step} 的整数倍选择；精确数值可手输或点全押"
+    let html = `<div class="raise-slider"><div class="raise-level">当前 ${g.betLevel||0}-BET · 本次加注为 ${(g.betLevel||0)+1}-BET · 滑条每格 ${slider.step}（小盲）</div><div class="raise-presets">${presets.map(({fraction,label,amount})=>`<button class="sound-button" data-pot-fraction="${fraction}" title="先跟注后，按底池 ${Math.round(fraction*100)}% 加注；受最小加注和筹码限制" onclick="RiverTable.raiseTo(${amount})"><span>${label}</span><small>至 ${amount}</small></button>`).join('')}${[3,4].map(multiple=>{const amount=Math.min(maxT,Math.max(minT,g.currentBet*multiple));return `<button class="sound-button" data-raise-multiple="${multiple}" onclick="RiverTable.raiseTo(${amount})"><span>${multiple}×当前注</span><small>至 ${amount}</small></button>`;}).join('')}</div><label class="raise-amount">加注至 <input id="raiseAmount" type="number" min="${minT}" max="${maxT}" value="${raiseValue}" inputmode="numeric" oninput="RiverTable.raiseInput(this.value)"><button class="sound-button" id="raiseMaxBtn" onclick="RiverTable.raiseTo(${maxT})" title="选择全部筹码，包括不足一格的零头">梭哈</button></label>
+      <input type="range" min="${slider.disabled?minT:slider.min}" max="${slider.disabled?minT:slider.max}" step="${slider.step}" value="${raiseValue}" ${slider.disabled?'disabled':''} title="按小盲 ${slider.step} 的整数倍选择；精确数值可手输或点梭哈"
         oninput="raiseValue=parseInt(this.value);document.getElementById('raiseAmount').value=raiseValue;"/>
       <div style="display:flex;gap:8px;margin-top:6px;">
         <button class="action-btn action-cancel" onclick="cancelRaise()">取消</button>
@@ -595,7 +593,7 @@ function renderGame(g) {
   else html += `<button class="action-btn action-call" onclick="playerAction('call')">跟注 ${Math.min(need,cp.chips)}</button>`;
   html += `</div><div class="action-row">`;
   if (canRaise) html += `<button class="action-btn action-raise" onclick="startRaise()">${(g.betLevel||0)+1}-BET · 加注至 ${g.currentBet+g.minRaise}</button>`;
-  if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" onclick="playerAction('allin')">全押 ${cp.chips}</button>`;
+  if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" onclick="playerAction('allin')">梭哈 ${cp.chips}</button>`;
   html += '</div>';
   panel.innerHTML = html;
   document.getElementById('actionHint').textContent = `轮到你了`;

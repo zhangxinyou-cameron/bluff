@@ -5,7 +5,7 @@ const Avatars=require('./public/avatars');
 const RunoutTimeline=require('./public/runout-timeline');
 const DEFAULT_TIMING={deal:1800,street:1200,runout:3000,action:900,ai:1100,turn:60000,offlineTurn:30000,reserve:1800000,vote:20000};
 const PHASE={pre_flop:'翻牌前',flop:'翻牌',turn:'转牌',river:'河牌',hand_over:'结算'};
-const ACTION={fold:'弃牌 FOLD',check:'过牌 CHECK',call:'跟注 CALL',raise:'加注 RAISE',allin:'全押 ALL IN'};
+const ACTION={fold:'弃牌 FOLD',check:'过牌 CHECK',call:'跟注 CALL',raise:'加注 RAISE',allin:'梭哈 ALL IN'};
 const send=(ws,data)=>{if(ws?.readyState===1)ws.send(JSON.stringify(data));};
 const hash=token=>crypto.createHash('sha256').update(token).digest('hex');
 

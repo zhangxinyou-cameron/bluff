@@ -5,7 +5,7 @@
     {"id":"coffee","text":"别急，喝杯咖啡慢慢想。","audio":null},
     {"id":"bluff","text":"你这把是不是在偷鸡？","audio":null},
     {"id":"lucky","text":"好运气，下一手再来！","audio":null},
-    {"id":"allin","text":"搏一搏，全押！","audio":null}
+    {"id":"allin","text":"搏一搏，梭哈！","audio":null}
   ],
   "gifts": [
     {"id":"tomato","label":"扔番茄","emoji":"🍅"},

@@ -70,7 +70,7 @@ test('action boxes ignore stale streets and hands, preserving folded and all-in 
   const boxes=()=>[...(v.elements.get('playersTop').innerHTML+v.elements.get('playersBottom').innerHTML).matchAll(/<div class="player-action [^"]*">([^<]*)<\/div>/g)].map(m=>m[1]);
   assert.deepEqual(boxes().sort(),['尚未行动','尚未行动','本轮过牌','已弃牌'].sort());
   game.players[1].allIn=true;game.phase='turn';v.render(game,0);
-  assert.deepEqual(boxes().sort(),['尚未行动','已全押','尚未行动','已弃牌'].sort());
+  assert.deepEqual(boxes().sort(),['尚未行动','已梭哈','尚未行动','已弃牌'].sort());
 });
 
 test('disabled win rate hides and clears estimates without calculating, but keeps hand information',()=>{

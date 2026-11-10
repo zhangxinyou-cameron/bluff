@@ -24,7 +24,7 @@ const E=require('../public/poker-engine');
     for(const page of pages){
       await page.waitForFunction(phase=>{
         const state=isHost?g:clientGameState;
-        return state?.phase===phase&&document.querySelectorAll('.player-action').length===state.players.length&&[...document.querySelectorAll('.player-action')].every(e=>/^(尚未行动|已弃牌|已全押|本手旁观)/.test(e.textContent))&&document.getElementById('actionAnnouncement').dataset.action==='deal';
+        return state?.phase===phase&&document.querySelectorAll('.player-action').length===state.players.length&&[...document.querySelectorAll('.player-action')].every(e=>/^(尚未行动|已弃牌|已梭哈|本手旁观)/.test(e.textContent))&&document.getElementById('actionAnnouncement').dataset.action==='deal';
       },room.game.phase);
       assert.match(await page.locator('#actionAnnouncement').textContent(),/等待行动/);
     }
