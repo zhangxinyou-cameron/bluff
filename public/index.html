@@ -52,6 +52,14 @@
   </div>
   <footer class="social-footer"><span id="socialFeedback" role="status" aria-live="polite">轻松互动，享受每一手好牌。</span><span class="social-footer-suits" aria-hidden="true">♠ ♥ ♣ ♦</span></footer>
 </dialog>
+<dialog id="peekSettingsDialog" class="peek-settings-dialog" aria-labelledby="peekSettingsTitle">
+  <header class="avatar-header"><h2 id="peekSettingsTitle">我的看牌门槛</h2><button class="social-close" onclick="document.getElementById('peekSettingsDialog').close()" aria-label="关闭看牌设置">×</button></header>
+  <p id="peekThresholdCurrent" class="avatar-note"></p>
+  <label class="peek-auto-option"><input id="peekAutoEnabled" type="checkbox" onchange="document.getElementById('peekThresholdAmount').disabled=!this.checked"> 达到门槛时自动同意</label>
+  <label class="field-label" for="peekThresholdAmount">最低小费（虚拟筹码）</label><input id="peekThresholdAmount" class="room-code-input" type="number" min="0" step="1" inputmode="numeric" value="0">
+  <p class="avatar-note">门槛向全桌公开，只影响后续申请。0表示免费申请也自动同意；关闭则全部手动确认。低于门槛仍会弹窗，只有已弃牌或无筹码观战者可申请，小费按原规则于本手结算后支付。</p>
+  <button id="savePeekThreshold" class="home-btn btn-create" onclick="RiverTable.savePeekSettings()">保存门槛</button>
+</dialog>
 <dialog id="avatarDialog" class="avatar-dialog" aria-labelledby="avatarTitle">
   <header class="avatar-header"><div><span class="social-eyebrow">YOUR TABLE IDENTITY</span><h2 id="avatarTitle">选择你的头像</h2></div><button class="social-close" onclick="document.getElementById('avatarDialog').close()" aria-label="关闭头像选择">×</button></header>
   <p class="avatar-note">挑一个喜欢的形象，整桌朋友都能看见。</p><div id="avatarChoices" class="avatar-choices"></div>

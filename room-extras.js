@@ -8,10 +8,14 @@ module.exports=function install(RoomManager){
     extraSnapshot(room,viewer){
       const g=room.game;
       return{packs:safePacks,peekRequests:(g?.peekRequests||[]).filter(r=>r.from===viewer||r.to===viewer),runoutVote:g?.runoutVote||null,
-        roster:[...room.people.values()].map(p=>({id:p.id,name:p.name,avatar:p.avatar,connected:p.connected,kicked:!!p.kicked,retired:p.retired}))};
+        roster:[...room.people.values()].map(p=>({id:p.id,name:p.name,avatar:p.avatar,peekThreshold:p.peekThreshold??null,connected:p.connected,kicked:!!p.kicked,retired:p.retired}))};
     },
     extraCommand(room,person,data){
       const g=room.game,me=g?.players.find(p=>p.id===person.id);
+      if(data.type==='peekThreshold'){
+        if(data.threshold!==null&&(!Number.isSafeInteger(data.threshold)||data.threshold<0))return fail('门槛须为非负整数，或关闭自动同意');
+        person.peekThreshold=data.threshold;return{ok:true,message:data.threshold===null?'已改为手动确认看牌申请':`看牌门槛已公开为 ${data.threshold} 筹码，后续达标申请自动同意`};
+      }
       if(data.type==='avatar'){
         if(!Avatars.valid(data.avatar))return fail('请选择有效的头像');
         person.avatar=data.avatar;if(me)me.avatar=data.avatar;return{ok:true,message:'头像已更新'};
@@ -70,7 +74,13 @@ module.exports=function install(RoomManager){
         if(!Number.isSafeInteger(tip)||tip<0||tip>me.chips)return fail('小费须为不超过持有筹码的非负整数');
         if(g.peekRequests.some(r=>r.from===person.id&&r.to===target.id))return fail('本手已向此玩家申请过');
         if(g.peekRequests.length>=56)return fail('本手申请已满');
-        g.peekRequests.push({id:`${g.handNumber}-${person.id}-${target.id}`,from:person.id,to:target.id,tip,status:'pending',handNumber:g.handNumber,expiresAt:Date.now()+10000});
+        const request={id:`${g.handNumber}-${person.id}-${target.id}`,from:person.id,to:target.id,tip,status:'pending',handNumber:g.handNumber,expiresAt:Date.now()+10000};
+        const threshold=room.people.get(target.id)?.peekThreshold;
+        if(threshold!=null&&tip>=threshold){
+          const result=this.approvePeek(room,request,true);if(!result.ok)return result;
+          g.peekRequests.push(request);return{ok:true,message:'小费达到公开门槛，已自动同意，仅你可见'};
+        }
+        g.peekRequests.push(request);
         return{ok:true,message:'看牌申请已发送，等待对方同意'};
       }
       if(data.type==='peekReply'){
@@ -79,13 +89,7 @@ module.exports=function install(RoomManager){
         if(request?.status==='pending'&&Date.now()>=request.expiresAt)request.status='expired';
         if(!request||request.status!=='pending')return fail('申请已处理或已过期');
         if(data.accept!==true){request.status='declined';return{ok:true};}
-        const payer=g.players.find(p=>p.id===request.from),reserved=g.tips.filter(t=>t.from===payer.id&&!t.paid).reduce((s,t)=>s+t.amount,0);
-        if(!E.canRequestPeek(payer)||!me||me.connected===false||me.disconnected)return fail('申请者已不能看牌或目标玩家已离桌');
-        if(payer.chips-reserved<request.tip)return fail('申请者可用筹码不足，小费未转账');
-        request.status='approved';(g.privateReveals[person.id]||=([])).push(payer.id);
-        if(request.tip>0)g.tips.push({from:payer.id,to:person.id,amount:request.tip,paid:false});
-        if(['hand_over','tournament_over'].includes(g.phase))this.payTips(room);
-        return{ok:true,message:request.tip?'已定向亮牌，小费于本手结算后转账':'已仅向申请者亮牌'};
+        return this.approvePeek(room,request,false);
       }
       if(data.type==='runoutVote'){
         const vote=g?.runoutVote;if(g?.phase!=='runout_vote'||data.handNumber!==g.handNumber||!vote.eligibleIds.includes(person.id))return fail('当前不能参与发牌协商');
@@ -95,6 +99,18 @@ module.exports=function install(RoomManager){
         if(vote.eligibleIds.every(id=>vote.yesIds.includes(id)))this.finishVote(room,true,'所有争池玩家同意，发两次公共牌');
         return{ok:true};
       }
+    },
+    approvePeek(room,request,automatic){
+      const g=room.game,payer=g.players.find(p=>p.id===request.from),owner=g.players.find(p=>p.id===request.to);
+      if(!E.canRequestPeek(payer)||!owner||owner.connected===false||owner.disconnected||owner.holeCards.length!==2)return fail('申请者已不能看牌或目标玩家已离桌');
+      const reserved=g.tips.filter(t=>t.from===payer.id&&!t.paid).reduce((s,t)=>s+t.amount,0);
+      const incoming=g.tips.filter(t=>t.to===owner.id&&!t.paid).reduce((s,t)=>s+t.amount,0);
+      if(payer.chips-reserved<request.tip)return fail('申请者可用筹码不足，小费未转账');
+      if(!Number.isSafeInteger(owner.chips+incoming+request.tip))return fail('小费金额超出可记录范围');
+      request.status='approved';request.automatic=automatic;(g.privateReveals[owner.id]||=([])).push(payer.id);
+      if(request.tip>0)g.tips.push({from:payer.id,to:owner.id,amount:request.tip,paid:false});
+      if(g.phase==='hand_over')this.payTips(room);
+      return{ok:true,message:request.tip?'已定向亮牌，小费于本手结算后转账':'已仅向申请者亮牌'};
     },
     prepareVote(room){
       const vote=room.game.runoutVote;if(!vote||vote.expiresAt)return;

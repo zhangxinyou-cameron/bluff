@@ -95,6 +95,46 @@ test('peek requires a folded requester and owner consent; only that viewer recei
   assert.ok(!JSON.stringify(f.r.history).includes('holeCards'));
   for(const ws of f.sockets)f.command(ws,'handReady',{handNumber:1});assert.deepEqual(g.privateReveals,{});assert.deepEqual(g.peekRequests,[]);
 });
+test('personal thresholds are validated, public, owner-scoped and preserved on resume',t=>{
+  const f=table(t);assert.equal(f.r.people.get(0).peekThreshold,null);
+  for(const threshold of [-1,.5,'25',undefined,Number.MAX_SAFE_INTEGER+1])assert.equal(f.command(f.sockets[1],'peekThreshold',{threshold}).ok,false);
+  assert.ok(f.command(f.sockets[1],'peekThreshold',{threshold:25,target:0}).ok);assert.equal(f.r.people.get(0).peekThreshold,null);
+  for(const ws of f.sockets)assert.equal(f.latest(ws).roster.find(p=>p.id===1).peekThreshold,25);
+  f.start();assert.equal(f.latest(f.sockets[0]).game.players[1].peekThreshold,25);
+  const token=f.sockets[1].messages.find(m=>m.type==='joined').resumeToken;f.m.leave(f.sockets[1]);const restored=f.join({resumeToken:token});assert.equal(f.latest(restored).roster.find(p=>p.id===1).peekThreshold,25);
+});
+
+test('threshold match auto-approves privately, reserves tips once, settles once, and below threshold stays manual',t=>{
+  const f=table(t,4);f.r.settings.allowBuyIn=true;f.start();const g=f.r.game;f.act('fold');
+  f.command(f.sockets[0],'peekThreshold',{threshold:25});f.command(f.sockets[2],'peekThreshold',{threshold:25});
+  const before=g.players[1].chips;assert.ok(f.command(f.sockets[1],'peekRequest',{target:0,tip:25,handNumber:1}).ok);
+  const request=g.peekRequests[0];assert.equal(request.status,'approved');assert.equal(request.automatic,true);assert.equal(g.players[1].chips,before);
+  assert.equal(f.latest(f.sockets[1]).game.players[0].holeCards.length,2);assert.equal(f.latest(f.sockets[2]).game.players[0].holeCards.length,0);
+  assert.equal(f.command(f.sockets[0],'peekReply',{peekId:request.id,accept:true}).ok,false);assert.equal(g.tips.length,1);
+  f.command(f.sockets[1],'peekRequest',{target:2,tip:24,handNumber:1});assert.equal(g.peekRequests[1].status,'pending');
+  f.command(f.sockets[2],'peekThreshold',{threshold:0});assert.equal(g.peekRequests[1].status,'pending','changes only apply to future requests');
+  while(E.betting(g))f.act('fold');assert.equal(g.players[1].chips,before-25);f.m.payTips(f.r);assert.equal(g.players[1].chips,before-25);f.m.check(f.r);
+  for(const ws of f.sockets)f.command(ws,'handReady',{handNumber:1});assert.equal(g.privateReveals[0],undefined);assert.equal(f.r.people.get(0).peekThreshold,25);
+});
+
+test('auto approval does not overcommit tips; zero threshold allows free viewing and disabling restores consent',t=>{
+  const f=table(t,4);f.start();const g=f.r.game;f.act('fold');
+  for(const id of [0,2])f.command(f.sockets[id],'peekThreshold',{threshold:1});
+  assert.ok(f.command(f.sockets[1],'peekRequest',{target:0,tip:1500,handNumber:1}).ok);
+  assert.equal(f.command(f.sockets[1],'peekRequest',{target:2,tip:1000,handNumber:1}).ok,false);assert.equal(g.peekRequests.length,1);assert.equal(g.privateReveals[2],undefined);
+  f.command(f.sockets[2],'peekThreshold',{threshold:0});assert.ok(f.command(f.sockets[1],'peekRequest',{target:2,tip:0,handNumber:1}).ok);assert.equal(g.peekRequests[1].automatic,true);assert.equal(g.tips.length,1);
+  f.command(f.sockets[3],'peekThreshold',{threshold:0});f.command(f.sockets[3],'peekThreshold',{threshold:null});f.command(f.sockets[1],'peekRequest',{target:3,tip:0,handNumber:1});assert.equal(g.peekRequests[2].status,'pending');
+});
+
+test('automatic approval between hands pays immediately once and clears both next-hand confirmations',t=>{
+  const f=table(t);f.r.settings.allowBuyIn=true;f.start();const g=f.r.game;while(E.betting(g))f.act('fold');
+  const owner=g.players.find(p=>!p.folded),viewer=g.players.find(p=>p.folded),before=viewer.chips;
+  f.command(f.sockets[owner.id],'peekThreshold',{threshold:20});f.command(f.sockets[owner.id],'handReady',{handNumber:1});f.command(f.sockets[viewer.id],'handReady',{handNumber:1});
+  assert.ok(f.command(f.sockets[viewer.id],'peekRequest',{target:owner.id,tip:20,handNumber:1}).ok);
+  assert.equal(viewer.chips,before-20);assert.equal(g.tips[0].paid,true);assert.deepEqual(g.nextHandReady,[]);
+  assert.equal(f.command(f.sockets[viewer.id],'peekRequest',{target:owner.id,tip:20,handNumber:1}).ok,false);assert.equal(viewer.chips,before-20);f.m.check(f.r);
+});
+
 test('zero-chip spectators in both modes can request private cards with consent, but active all-ins cannot',t=>{
   for(const allowBuyIn of [false,true]){
     const f=table(t,4);f.r.settings.minPlayers=1;

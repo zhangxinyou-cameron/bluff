@@ -67,7 +67,7 @@ class RoomManager {
     this.publish(room);
   }
   rotateToken(person){person.token=crypto.randomBytes(32).toString('base64url');person.tokenHash=hash(person.token);}
-  newPerson(id,name,avatar){const person={id,name:String(name||'玩家').slice(0,32),avatar:Avatars.get(avatar).id,connected:true,ready:id===0,commandSeq:0,receipts:new Map(),offlineAt:0,retired:false};this.rotateToken(person);return person;}
+  newPerson(id,name,avatar){const person={id,name:String(name||'玩家').slice(0,32),avatar:Avatars.get(avatar).id,peekThreshold:null,connected:true,ready:id===0,commandSeq:0,receipts:new Map(),offlineAt:0,retired:false};this.rotateToken(person);return person;}
   finished(room){const g=room.game;if(!g)return false;if(g.allowBuyIn)return g.phase==='tournament_over';const alive=g.players.filter(p=>p.chips>0&&!p.disconnected);return alive.length<2||(g.players.length>room.settings.minPlayers&&alive.length<=room.settings.minPlayers);}
   serialize(room,viewer){
     const g=room.game;if(!g)return null;
@@ -79,7 +79,7 @@ class RoomManager {
         handResult:p.handResult,handResults:p.handResults,acted:p.acted,canRaise:E.canRaise(g,p),disconnected:!!p.disconnected,connected:p.connected!==false,isAI:!!p.isAI,
         chipsBeforeHand:p.chipsBeforeHand,chipsAfterHand:p.chipsAfterHand,initialChips:p.initialChips,bankDebt:p.bankDebt,totalBorrowed:p.totalBorrowed,totalRepaid:p.totalRepaid,bankVersion:p.bankVersion,borrowHandNumber:p.borrowHandNumber,borrowedThisHand:p.borrowedThisHand,
         eliminatedHand:p.eliminatedHand,eliminationStack:p.eliminationStack,showFolded:p.showFolded,lastAction:p.lastAction,
-        commandSeq:room.people.get(p.id)?.commandSeq||0,position:g.positions?.[p.id]||null,
+        commandSeq:room.people.get(p.id)?.commandSeq||0,peekThreshold:room.people.get(p.id)?.peekThreshold??null,position:g.positions?.[p.id]||null,
         privateReveal:!!g.privateReveals?.[p.id]?.includes(viewer),
         holeCards:p.id===viewer||(reveal&&((g.showdownOccurred===true&&!p.folded)||p.showFolded))||g.privateReveals?.[p.id]?.includes(viewer)?p.holeCards:[]}))};
   }

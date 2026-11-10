@@ -8,6 +8,12 @@
   const cmd=(type,payload={})=>window.RiverSession.command(type,payload);
   const state=()=>data?.game;
   const name=id=>state()?.players.find(p=>p.id===id)?.name||data?.roster.find(p=>p.id===id)?.name||'玩家';
+  el('avatarBtn').insertAdjacentHTML('afterend','<button id="peekSettingsBtn" class="sound-button" onclick="RiverTable.openPeekSettings()">看牌门槛 · 手动</button>');
+  el('socialAudience').insertAdjacentHTML('afterend','<span id="socialPeekThreshold" class="social-threshold"></span>');
+  const thresholdText=value=>value==null?'手动确认':`小费 ≥ ${value} 筹码自动同意`;
+  const myThreshold=()=>data?.roster?.find(p=>p.id===mySeatId)?.peekThreshold??null;
+  function openPeekSettings(){if(!data)return;const value=myThreshold();el('peekAutoEnabled').checked=value!=null;el('peekThresholdAmount').value=value??0;el('peekThresholdAmount').disabled=value==null;el('peekThresholdCurrent').textContent='当前公开设置：'+thresholdText(value);if(!el('peekSettingsDialog').open)el('peekSettingsDialog').showModal();}
+  function savePeekSettings(){const raw=el('peekThresholdAmount').value,value=el('peekAutoEnabled').checked?Number(raw):null;if(value!==null&&(raw.trim()===''||!Number.isSafeInteger(value)||value<0)){toast('门槛请输入非负整数',false);return;}cmd('peekThreshold',{threshold:value});}
   document.body.insertAdjacentHTML('beforeend','<div id="tableFeedback" class="table-feedback" popover="manual" hidden role="status" aria-live="polite"></div>');
   function toast(message,ok=true){const box=el('tableFeedback');clearTimeout(toastTimer);box.textContent=message;box.dataset.state=ok?'success':'warning';box.hidden=false;try{box.showPopover?.();}catch(_){}toastTimer=setTimeout(()=>{try{box.hidePopover?.();}catch(_){}box.hidden=true;},3500);}
   function avatarUI(){
@@ -72,6 +78,7 @@
       el('peekOutbox').innerHTML=outgoing.map(r=>`<div class="peek-receipt" data-state="${esc(r.status)}"><span>${esc(name(r.to))}</span><strong>${esc({pending:'等待答复',approved:'已同意 · 仅你可见',declined:'对方已婉拒',expired:'申请已过期'}[r.status]||r.status)}</strong></div>`).join('');
     }
     targetChanged();avatarUI();peekClock(window.RiverSession.getDiagnostics().serverNow);
+    el('peekSettingsBtn').textContent='看牌门槛 · '+(myThreshold()==null?'手动':myThreshold()+'筹码');
     el('positionGuide').hidden=!game?.actionOrder;
     if(game?.actionOrder){const row=(label,ids)=>`<div class="position-order"><strong>${label}</strong>${ids.map(id=>{const p=game.players.find(p=>p.id===id);return `<span class="position-chip ${id===mySeatId?'is-me':''}"><b>${esc(p.position?.label||'')}</b>${esc(p.name)}</span>`;}).join('<i aria-hidden="true">→</i>')}</div>`;
       el('positionGuideContent').innerHTML=`<p>${game.blindRule==='ante'?'全员底注模式按BTN＋距离显示位置，翻前从庄家左手第一位开始。':game.blindRule==='position'?'自定义盲注：庄家左手第一位BB付1倍，第二位SB付半倍。':'标准位置制：庄家左手第一位SB付半倍，第二位BB付1倍；两人桌庄家兼任SB。'} 以下为开局顺序，实际行动跳过已弃牌、全押及未参与者。</p>${row('翻前',game.actionOrder.preflop)}${row('翻后',game.actionOrder.postflop)}`;}
@@ -87,6 +94,7 @@
     el('socialAvatar').innerHTML=RiverAvatars.markup(selected?.avatar);
     el('socialPresence').textContent=selected?selected.connected===false?'暂离':selected.isAI?'人机':'在桌':'';
     el('socialPresence').dataset.online=String(!!selected&&selected.connected!==false);
+    el('socialPeekThreshold').textContent=selected&&!selected.isAI?'对方看牌门槛：'+thresholdText(selected.peekThreshold):'';
     el('socialAudience').textContent=socialTab==='phrases'?'语言包会发送给整桌朋友':socialTab==='peek'?'由这位玩家决定是否向你亮牌':'礼物将送到所选玩家座位';
     const request=data?.peekRequests?.find(r=>r.from===mySeatId&&r.to===target?.id);
     const can=!!game&&PokerEngine.canRequestPeek(me)&&game.phase!=='tournament_over'&&!!target&&!target.isAI&&!target.disconnected&&target.connected!==false&&!request;
@@ -154,6 +162,7 @@
   el('phraseOpenBtn').onclick=()=>open(undefined,'phrases');
   document.addEventListener('visibilitychange',()=>{if(document.hidden)hideTurnNotice();});
   function feedback(ack,request){
+    if(ack.command==='peekThreshold'){if(ack.ok)el('peekSettingsDialog').close();toast(ack.message||'门槛设置已处理',ack.ok);return;}
     if(ack.command==='avatar'){if(ack.ok){RiverAvatars.save(request?.avatar||RiverAvatars.read());el('avatarDialog').close();avatarUI();}toast(ack.ok?'头像已更新':ack.message||'头像更新失败',ack.ok);return;}
     if(ack.command==='peekReply'){if(replyPending===request?.peekId)replyPending='';if(ack.ok){if(activePeek===request?.peekId)el('peekConsentDialog').close();}else toast(ack.message||'申请已过期',false);}
     if(ack.command==='gift'){toast(ack.ok?`已向 ${name(request?.target)} ${data?.packs?.gifts.find(g=>g.id===request?.giftId)?.label||'送出心意'}`:ack.message||'互动未发送，请重试',ack.ok);}
@@ -167,10 +176,10 @@
   function raiseInput(value){const game=state(),me=game.players.find(p=>p.id===mySeatId);raiseValue=Math.max(game.currentBet+game.minRaise,Math.min(me.chips+me.currentBet,Math.floor(Number(value)||0)));const slider=document.querySelector('.raise-slider input[type=range]');if(slider)slider.value=raiseValue;}
   const viewport=()=>document.documentElement.style.setProperty('--play-height',Math.round(window.visualViewport?.height||innerHeight)+'px');
   viewport();window.addEventListener('resize',viewport);window.visualViewport?.addEventListener('resize',viewport);
-  window.RiverTable={update,layout,render,clock,event,open,openAvatar,setTab,targetChanged,raiseTo,raiseInput,feedback,
+  window.RiverTable={update,layout,render,clock,event,open,openAvatar,openPeekSettings,savePeekSettings,setTab,targetChanged,raiseTo,raiseInput,feedback,
     requestPeek:()=>cmd('peekRequest',{target:Number(el('socialTarget').value),tip:Number(el('peekTip').value),handNumber:state()?.handNumber}),
     kick:()=>cmd('kick',{target:Number(el('socialTarget').value)}),setMode:mode=>cmd('deckMode',{mode}),setBlinds:mode=>cmd('blindMode',{mode}),vote:twice=>cmd('runoutVote',{twice,handNumber:state()?.handNumber}),
-    stop:()=>{playing=false;data=null;activePeek='';replyPending='';hideTurnNotice();document.body.classList.remove('in-game');el('playWorkspace').classList.remove('is-playing');el('actionPanel').innerHTML='';for(const id of ['socialDialog','avatarDialog','peekConsentDialog'])el(id).close();window.scrollTo({top:0});}
+    stop:()=>{playing=false;data=null;activePeek='';replyPending='';hideTurnNotice();document.body.classList.remove('in-game');el('playWorkspace').classList.remove('is-playing');el('actionPanel').innerHTML='';for(const id of ['socialDialog','avatarDialog','peekConsentDialog','peekSettingsDialog'])el(id).close();window.scrollTo({top:0});}
   };
   avatarUI();
 })();
