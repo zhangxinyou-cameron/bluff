@@ -81,7 +81,7 @@ function cmpHand(a,b) {
     return { players: players.slice().sort((a,b)=>a.id-b.id).map(p => ({ ...p, holeCards: [], currentBet: 0, totalBet: 0, eliminatedHand: null, eliminationStack: null,
       initialChips:p.chips,bankDebt:0,totalBorrowed:0,totalRepaid:0,bankVersion:0,lastBankRequest:null,chipsAfterHand:null,borrowHandNumber:-1,borrowedThisHand:0 })),
       allowBuyIn:options.allowBuyIn===true,loanPerHandLimit:validLoanLimit(options.loanPerHandLimit)?options.loanPerHandLimit??null:null,loanTotalLimit:validLoanLimit(options.loanTotalLimit)?options.loanTotalLimit??null:null,hostSeatId:options.hostSeatId??0,endRequested:false,bankLog:[],bankSequence:0,
-      autoDeck:options.autoDeck===true,deckMode:options.deckMode||'auto',variant:'standard',blindMode:options.blindMode||'auto',blindRule:'standard',blindSeats:null,runTwiceEnabled:options.runTwiceEnabled===true,
+      showWinRate:options.showWinRate!==false,autoDeck:options.autoDeck===true,deckMode:options.deckMode||'auto',variant:'standard',blindMode:options.blindMode||'auto',blindRule:'standard',blindSeats:null,runTwiceEnabled:options.runTwiceEnabled===true,
       initialTotal:players.reduce((sum,p)=>sum+p.chips,0),
       deck: [], communityCards: [], pot: 0, currentBet: 0, minRaise: bigBlind,
       smallBlind: Math.floor(bigBlind/2), bigBlind, phase: 'waiting', dealerIndex: -1,

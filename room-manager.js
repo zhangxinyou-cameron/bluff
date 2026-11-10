@@ -44,7 +44,7 @@ class RoomManager {
       if(old&&old!==ws){old.superseded=true;old.close(4001,'Seat resumed elsewhere');}
     }else if(data.seatId===0){
       if(room){send(ws,{type:'error',message:'房间号已被使用，请重新创建房间'});return;}
-      room={code,people:new Map(),settings:{bigBlind:20,initChips:2000,minPlayers:2,allowBuyIn:false,deckMode:'auto',blindMode:'auto'},maxPlayers:4,aiSlots:{},game:null,history:[],version:0,blockedUntil:0,presentation:null,deadline:0,aiDue:0,paused:false,lastActivity:Date.now()};
+      room={code,people:new Map(),settings:{bigBlind:20,initChips:2000,minPlayers:2,allowBuyIn:false,showWinRate:true,deckMode:'auto',blindMode:'auto'},maxPlayers:4,aiSlots:{},game:null,history:[],version:0,blockedUntil:0,presentation:null,deadline:0,aiDue:0,paused:false,lastActivity:Date.now()};
       this.games.set(code,room);this.connections.set(code,new Map());
       person=this.newPerson(0,data.name,data.avatar);room.people.set(0,person);
     }else{
@@ -73,7 +73,7 @@ class RoomManager {
     const g=room.game;if(!g)return null;
     const reveal=['hand_over','showdown','tournament_over'].includes(g.phase);
     return{handNumber:g.handNumber,phase:g.phase,pot:g.pot,currentBet:g.currentBet,dealerIndex:g.dealerIndex,currentPlayerIndex:g.currentPlayerIndex,
-      communityCards:g.communityCards,minRaise:g.minRaise,bigBlind:g.bigBlind,revision:g.revision,nextHandReady:g.nextHandReady,winners:g.winners,pots:g.pots,
+      communityCards:g.communityCards,minRaise:g.minRaise,bigBlind:g.bigBlind,revision:g.revision,nextHandReady:g.nextHandReady,winners:g.winners,pots:g.pots,showWinRate:g.showWinRate!==false,
       allowBuyIn:g.allowBuyIn,loanPerHandLimit:g.loanPerHandLimit,loanTotalLimit:g.loanTotalLimit,endRequested:g.endRequested,bankLog:g.bankLog,bankSequence:g.bankSequence,variant:g.variant,blindRule:g.blindRule,blindSeats:g.blindSeats,actionOrder:g.actionOrder,runoutBoards:g.runoutBoards,showdownOccurred:g.showdownOccurred===true,
       players:g.players.map(p=>({id:p.id,name:p.name,avatar:p.avatar||'default',chips:p.chips,currentBet:p.currentBet,totalBet:p.totalBet,folded:p.folded,allIn:p.allIn,isActive:p.isActive,
         handResult:p.handResult,handResults:p.handResults,acted:p.acted,canRaise:E.canRaise(g,p),disconnected:!!p.disconnected,connected:p.connected!==false,isAI:!!p.isAI,
@@ -127,9 +127,10 @@ class RoomManager {
     if(data.type==='roomSettings'){
       if(person.id!==0||g)return fail('只有房主可在开局前设置规则');
       const s=data.settings||{};
+      if(s.showWinRate!==undefined&&typeof s.showWinRate!=='boolean')return fail('是否显示胜率设置无效');
       if(!E.validLoanLimit(s.loanPerHandLimit)||!E.validLoanLimit(s.loanTotalLimit))return fail('贷款限额须为0或正整数，无限额请选无限');
       if(![10,20,50,100].includes(s.bigBlind)||![1000,2000,5000].includes(s.initChips)||![1,2,3].includes(s.minPlayers))return fail('房间设置无效');
-      room.settings={bigBlind:s.bigBlind,initChips:s.initChips,minPlayers:s.minPlayers,allowBuyIn:s.allowBuyIn===true,loanPerHandLimit:s.loanPerHandLimit??null,loanTotalLimit:s.loanTotalLimit??null,deckMode:['auto','short','standard'].includes(s.deckMode)?s.deckMode:room.settings.deckMode,blindMode:['auto','ante','position','standard'].includes(s.blindMode)?s.blindMode:room.settings.blindMode};
+      room.settings={bigBlind:s.bigBlind,initChips:s.initChips,minPlayers:s.minPlayers,allowBuyIn:s.allowBuyIn===true,showWinRate:s.showWinRate!==false,loanPerHandLimit:s.loanPerHandLimit??null,loanTotalLimit:s.loanTotalLimit??null,deckMode:['auto','short','standard'].includes(s.deckMode)?s.deckMode:room.settings.deckMode,blindMode:['auto','ante','position','standard'].includes(s.blindMode)?s.blindMode:room.settings.blindMode};
       const required=Math.max(...room.people.keys())+1;
       room.maxPlayers=Math.max(required,Math.min(8,Math.max(2,Math.floor(Number(data.maxPlayers)||4))));
       room.aiSlots={};for(let i=1;i<room.maxPlayers;i++)if(data.aiSlots?.[i]&&!room.people.has(i))room.aiSlots[i]=true;
@@ -144,7 +145,7 @@ class RoomManager {
       const names=['Alpha','Beta','Gamma','Delta','Omega','Sigma','Echo'];
       for(const key of Object.keys(room.aiSlots))if(room.aiSlots[key])players.push({id:Number(key),name:names[Number(key)-1],avatar:'robot',chips:room.settings.initChips,isAI:true,connected:true});
       if(players.length<2||players.length>8)return fail('请至少安排两人，最多8人');
-      room.game=E.createGame(players,room.settings.bigBlind,{allowBuyIn:room.settings.allowBuyIn,loanPerHandLimit:room.settings.loanPerHandLimit,loanTotalLimit:room.settings.loanTotalLimit,autoDeck:true,deckMode:room.settings.deckMode,blindMode:room.settings.blindMode,runTwiceEnabled:true});
+      room.game=E.createGame(players,room.settings.bigBlind,{allowBuyIn:room.settings.allowBuyIn,showWinRate:room.settings.showWinRate,loanPerHandLimit:room.settings.loanPerHandLimit,loanTotalLimit:room.settings.loanTotalLimit,autoDeck:true,deckMode:room.settings.deckMode,blindMode:room.settings.blindMode,runTwiceEnabled:true});
       this.start(room);return{ok:true};
     }
     if(!g)return fail('牌局尚未开始');

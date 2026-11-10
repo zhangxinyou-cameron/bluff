@@ -84,6 +84,7 @@
       node('maxPlayersVal').textContent=maxPlayers;
       for(const [id,value]of[['bigBlindSel',settings.bigBlind],['initChipsSel',settings.initChips],['minPlayersSel',settings.minPlayers],['allowBuyInSel',settings.allowBuyIn?'yes':'no']])node(id).value=String(value);
       node('minPlayersSel').disabled=settings.allowBuyIn;
+      node('showWinRateSel').value=settings.showWinRate===false?'no':'yes';node('showWinRateSel').disabled=!isHost;
       for(const [id,key]of [['loanPerHandLimit','loanPerHandLimit'],['loanTotalLimit','loanTotalLimit']]){if(document.activeElement!==node(id))node(id).value=settings[key]==null?'无限':String(settings[key]);node(id).disabled=!isHost||!settings.allowBuyIn;}
       const me=seats[mySeatId];
       setConnectionStatus(isHost?'房间已创建，等待玩家加入...':me?.ready?'已准备，等待房主开始游戏':'已连接房间，请点击准备');

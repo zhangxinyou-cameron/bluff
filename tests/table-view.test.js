@@ -73,6 +73,15 @@ test('action boxes ignore stale streets and hands, preserving folded and all-in 
   assert.deepEqual(boxes().sort(),['尚未行动','已全押','尚未行动','已弃牌'].sort());
 });
 
+test('disabled win rate hides and clears estimates without calculating, but keeps hand information',()=>{
+  const v=view(),game=E.createGame([{id:0,chips:2000},{id:1,chips:2000}],20,{showWinRate:false});E.startHand(game,()=>.42);
+  vm.runInContext('calcWinRate=()=>{throw Error("Disabled odds were calculated");};',v.context);
+  v.render(game,0);assert.equal(v.elements.get('winRateText').hidden,true);assert.equal(v.elements.get('winRateText').textContent,'');
+  while(game.phase==='pre_flop'){const p=game.players[game.currentPlayerIndex];E.applyAction(game,p.id,p.currentBet<game.currentBet?'call':'check');}
+  v.render(game,0);assert.match(v.elements.get('handTypeText').textContent,/当前:/);assert.equal(v.elements.get('winRateText').textContent,'');
+  game.showWinRate=true;vm.runInContext('calcWinRate=()=>50;',v.context);v.render(game,0);assert.equal(v.elements.get('winRateText').hidden,false);assert.match(v.elements.get('winRateText').textContent,/50%/);
+});
+
 test('raise presets use pot after calling and expose legal total raise-to amounts',()=>{
   const v=view();
   const game={pot:100,currentBet:40,minRaise:20},player={currentBet:10,chips:990};

@@ -134,6 +134,7 @@
         <span class="setting-label">允许买入</span>
         <select id="allowBuyInSel" class="mini-select" onchange="onSettingsChange()"><option value="no" selected>否 · 淘汰赛</option><option value="yes">是 · 银行无限场</option></select>
       </div>
+      <div class="setting-row"><label class="setting-label" for="showWinRateSel">是否显示胜率</label><select id="showWinRateSel" class="mini-select" onchange="onSettingsChange()"><option value="yes" selected>是 · 显示胜率</option><option value="no">否 · 隐藏胜率</option></select></div>
       <div class="setting-row"><label class="setting-label" for="loanPerHandLimit">每手贷款限额</label><input id="loanPerHandLimit" class="mini-select" list="loanLimitOptions" value="无限" inputmode="numeric" onchange="onSettingsChange()" title="每位玩家每手累计借入上限；0禁止贷款，清空或选无限表示不限"></div>
       <div class="setting-row"><label class="setting-label" for="loanTotalLimit">总贷款限额</label><input id="loanTotalLimit" class="mini-select" list="loanLimitOptions" value="无限" inputmode="numeric" onchange="onSettingsChange()" title="每位玩家未还本金上限；还款释放总额度"></div>
       <datalist id="loanLimitOptions"><option value="无限"></option><option value="0"></option><option value="500"></option><option value="1000"></option><option value="2000"></option><option value="5000"></option><option value="10000"></option></datalist>
@@ -238,7 +239,7 @@ let clientGameState = null; // client收到的游戏状态
 let chatMessages = [];
 let maxPlayers = 4;
 let aiSlots = {};
-let settings = { bigBlind: 20, initChips: 2000, minPlayers: 2, allowBuyIn:false };
+let settings = { bigBlind: 20, initChips: 2000, minPlayers: 2, allowBuyIn:false, showWinRate:true };
 let raiseMode = false, raiseValue = 0;
 let actionPending = false;
 let aiTimer = null;
@@ -349,6 +350,7 @@ function serializeGame(g, viewerId) {
     winners: g.winners,
     pots: g.pots,
     allowBuyIn: g.allowBuyIn,
+    showWinRate:g.showWinRate!==false,
     endRequested: g.endRequested,
     bankLog: g.bankLog,
     bankSequence: g.bankSequence,
@@ -397,6 +399,7 @@ function fmtCardSmall(c) {
 
 function renderSeats() {
   document.getElementById('waitRuleSummary').textContent=settings.allowBuyIn?`银行买入场 · 无破产淘汰 · 每人每手贷款 ${settings.loanPerHandLimit??'无限'} / 未还本金上限 ${settings.loanTotalLimit??'无限'} · 净筹码排名`:'淘汰赛 · 不允许中途买入，按筹码及出局先后排名';
+  document.getElementById('waitRuleSummary').textContent+=' · '+(settings.showWinRate===false?'不显示胜率':'显示胜率');
   let html = '';
   for (let i = 0; i < maxPlayers; i++) {
     const s = seats[i];
@@ -505,6 +508,8 @@ function renderGame(g) {
 
   // 牌型+胜率提示
   const infoBar = document.getElementById('handInfoBar');
+  const showWinRate=g.showWinRate!==false;
+  document.getElementById('winRateText').hidden=!showWinRate;
   const cp0 = g.players.find(p=>p.id===mySeatId);
   if (cp0 && !cp0.folded && cp0.holeCards && cp0.holeCards.length > 0 && g.phase !== 'hand_over') {
     let hType = '', wRate = '';
@@ -512,11 +517,11 @@ function renderGame(g) {
       const hr = evalBest([...cp0.holeCards, ...g.communityCards],g.variant);
       if (hr) hType = `当前: ${hr.name}`;
       const opps = g.players.filter(p => p.isActive && !p.folded).length - 1;
-      if (opps > 0) wRate = `胜率: ${calcWinRate(cp0.holeCards, g.communityCards, opps,g.variant)}%`;
+      if (showWinRate&&opps > 0) wRate = `胜率: ${calcWinRate(cp0.holeCards, g.communityCards, opps,g.variant)}%`;
     } else {
-      hType = '起手牌评估中...';
+      hType = showWinRate?'起手牌评估中...':'翻牌前';
       const opps = g.players.filter(p => p.isActive && !p.folded).length - 1;
-      wRate = opps>0?`估计胜率 ${calcWinRate(cp0.holeCards,[],opps,g.variant)}%`:'胜率 100%';
+      if(showWinRate)wRate = opps>0?`估计胜率 ${calcWinRate(cp0.holeCards,[],opps,g.variant)}%`:'胜率 100%';
     }
     infoBar.style.display = 'flex';
     document.getElementById('handTypeText').textContent = hType;
@@ -1130,6 +1135,7 @@ function onSettingsChange() {
   settings.initChips = parseInt(document.getElementById('initChipsSel').value);
   settings.minPlayers = parseInt(document.getElementById('minPlayersSel').value);
   settings.allowBuyIn = document.getElementById('allowBuyInSel').value==='yes';
+  settings.showWinRate = document.getElementById('showWinRateSel').value!=='no';
   document.getElementById('minPlayersSel').disabled=settings.allowBuyIn;
   broadcastSettings();
 }

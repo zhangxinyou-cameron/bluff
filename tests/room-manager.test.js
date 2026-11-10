@@ -95,6 +95,15 @@ test('contested showdown still reveals all live hands and keeps folded hands pri
   const live=g.players.find(p=>!p.folded);assert.equal(f.command(f.sockets[live.id],'showFolded',{handNumber:1}).ok,false);
 });
 
+test('win-rate visibility is a host-only pregame boolean rule preserved in all game snapshots',t=>{
+  const f=fixture(t,3);assert.equal(f.room.settings.showWinRate,true);const settings={...f.room.settings,showWinRate:false};
+  assert.equal(f.command(f.sockets[1],'roomSettings',{settings}).ok,false);
+  for(const value of ['false',0,null])assert.equal(f.command(f.sockets[0],'roomSettings',{settings:{...settings,showWinRate:value}}).ok,false);
+  assert.ok(f.command(f.sockets[0],'roomSettings',{settings}).ok);f.start();assert.equal(f.room.game.showWinRate,false);
+  for(const ws of f.sockets)assert.equal(f.latest(ws).game.showWinRate,false);
+  assert.equal(f.command(f.sockets[0],'roomSettings',{settings:{...settings,showWinRate:true}}).ok,false);
+});
+
 test('invalid action cursor is repaired, and accounting anomaly pauses the room visibly',t=>{
   const f=fixture(t,3);f.start();f.room.game.currentPlayerIndex=-1;f.manager.tick();assert.ok(f.room.game.currentPlayerIndex>=0);
   f.room.game.players[0].chips++;f.command(f.sockets[0],'chat',{text:'invariant check'});assert.equal(f.room.paused,true);assert.ok(f.latest(f.sockets[0]).paused);
