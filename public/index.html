@@ -475,6 +475,13 @@ function potRaisePresets(game,player) {
   return [[.5,'半池'],[.75,'¾池'],[1,'满池'],[2,'双倍底池']].map(([fraction,label])=>({fraction,label,amount:Math.min(max,Math.max(min,Math.round(game.currentBet+potAfterCall*fraction)))}));
 }
 
+function raiseSliderSpec(game,player) {
+  const step=Math.max(1,Math.floor(game.smallBlind??game.bigBlind/2));
+  const min=Math.ceil((game.currentBet+game.minRaise)/step)*step;
+  const max=Math.floor((player.chips+player.currentBet)/step)*step;
+  return {step,min,max,disabled:min>max};
+}
+
 function renderGame(g) {
   updateSessionTools(g);
   const myPosition=g.players.find(p=>p.id===mySeatId)?.position;
@@ -571,8 +578,9 @@ function renderGame(g) {
     if (raiseValue < minT) raiseValue = minT;
     if (raiseValue > maxT) raiseValue = maxT;
     const presets=potRaisePresets(g,cp);
-    let html = `<div class="raise-slider"><div class="raise-level">当前 ${g.betLevel||0}-BET · 本次加注为 ${(g.betLevel||0)+1}-BET</div><div class="raise-presets">${presets.map(({fraction,label,amount})=>`<button class="sound-button" data-pot-fraction="${fraction}" title="先跟注后，按底池 ${Math.round(fraction*100)}% 加注；受最小加注和筹码限制" onclick="RiverTable.raiseTo(${amount})"><span>${label}</span><small>至 ${amount}</small></button>`).join('')}${[3,4].map(multiple=>{const amount=Math.min(maxT,Math.max(minT,g.currentBet*multiple));return `<button class="sound-button" data-raise-multiple="${multiple}" onclick="RiverTable.raiseTo(${amount})"><span>${multiple}×当前注</span><small>至 ${amount}</small></button>`;}).join('')}</div><label class="raise-amount">加注至 <input id="raiseAmount" type="number" min="${minT}" max="${maxT}" value="${raiseValue}" inputmode="numeric" oninput="RiverTable.raiseInput(this.value)"></label>
-      <input type="range" min="${minT}" max="${maxT}" value="${raiseValue}"
+    const slider=raiseSliderSpec(g,cp);
+    let html = `<div class="raise-slider"><div class="raise-level">当前 ${g.betLevel||0}-BET · 本次加注为 ${(g.betLevel||0)+1}-BET · 滑条每格 ${slider.step}（小盲）</div><div class="raise-presets">${presets.map(({fraction,label,amount})=>`<button class="sound-button" data-pot-fraction="${fraction}" title="先跟注后，按底池 ${Math.round(fraction*100)}% 加注；受最小加注和筹码限制" onclick="RiverTable.raiseTo(${amount})"><span>${label}</span><small>至 ${amount}</small></button>`).join('')}${[3,4].map(multiple=>{const amount=Math.min(maxT,Math.max(minT,g.currentBet*multiple));return `<button class="sound-button" data-raise-multiple="${multiple}" onclick="RiverTable.raiseTo(${amount})"><span>${multiple}×当前注</span><small>至 ${amount}</small></button>`;}).join('')}</div><label class="raise-amount">加注至 <input id="raiseAmount" type="number" min="${minT}" max="${maxT}" value="${raiseValue}" inputmode="numeric" oninput="RiverTable.raiseInput(this.value)"><button class="sound-button" id="raiseMaxBtn" onclick="RiverTable.raiseTo(${maxT})" title="选择全部筹码，包括不足一格的零头">全押</button></label>
+      <input type="range" min="${slider.disabled?minT:slider.min}" max="${slider.disabled?minT:slider.max}" step="${slider.step}" value="${raiseValue}" ${slider.disabled?'disabled':''} title="按小盲 ${slider.step} 的整数倍选择；精确数值可手输或点全押"
         oninput="raiseValue=parseInt(this.value);document.getElementById('raiseAmount').value=raiseValue;"/>
       <div style="display:flex;gap:8px;margin-top:6px;">
         <button class="action-btn action-cancel" onclick="cancelRaise()">取消</button>

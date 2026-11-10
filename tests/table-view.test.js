@@ -99,6 +99,18 @@ test('raise presets use pot after calling and expose legal total raise-to amount
   }
 });
 
+test('raise slider uses small-blind multiples while retaining precise numeric and all-in amounts',()=>{
+  const v=view();
+  for(const bigBlind of [10,20,50,100]){
+    const g=E.createGame([{id:0,chips:2000},{id:1,chips:2000}],bigBlind,{blindMode:'standard'});E.startHand(g);const p=g.players[g.currentPlayerIndex];p.canRaise=true;v.render(g,p.id,true);
+    const panel=v.elements.get('actionPanel').innerHTML,range=panel.match(/<input type="range"[^>]+>/)[0];assert.match(range,new RegExp(`step="${bigBlind/2}"`));
+    for(const attr of ['min','max'])assert.equal(Number(range.match(new RegExp(`${attr}="(\\d+)"`))[1])%(bigBlind/2),0);
+  }
+  const g=E.createGame([{id:0,chips:1995},{id:1,chips:2000}],20,{blindMode:'standard'});E.startHand(g);const p=g.players[g.currentPlayerIndex];p.canRaise=true;g.currentBet=77;g.minRaise=57;v.render(g,p.id,true);
+  const panel=v.elements.get('actionPanel').innerHTML;assert.match(panel,/<input type="range" min="140" max="1990" step="10"/);assert.match(panel,/id="raiseAmount" type="number" min="134" max="1995"/);assert.match(panel,/id="raiseMaxBtn" onclick="RiverTable.raiseTo\(1995\)"/);
+  p.chips=139-p.currentBet;v.render(g,p.id,true);assert.match(v.elements.get('actionPanel').innerHTML,/<input type="range"[^>]*disabled/);assert.match(v.elements.get('actionPanel').innerHTML,/RiverTable.raiseTo\(139\)/);
+});
+
 test('raise panel disappears when full raises are unavailable and never bypasses short-all-in restrictions',()=>{
   const v=view(),game=E.createGame([{id:0,name:'甲',chips:2000},{id:1,name:'乙',chips:2000},{id:2,name:'丙',chips:2000}],20,{blindMode:'standard'});
   E.startHand(game,()=>.42);const actor=game.players[game.currentPlayerIndex];
