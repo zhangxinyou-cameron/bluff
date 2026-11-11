@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { once } = require('node:events');
 const { spawn } = require('node:child_process');
+const net = require('node:net');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -107,5 +108,31 @@ test('each startup requires a fresh hidden password and never persists it', asyn
     assert.equal(code,0);assert.equal(entered,true);
     assert.equal(transcript.includes(password),false);
     assert.match(transcript,/仅在内存中/);
+  }
+});
+
+test('a duplicate startup reports the occupied port before prompting for a password', async t => {
+  const listener = net.createServer();
+  listener.listen(0, '0.0.0.0');
+  await once(listener, 'listening');
+  t.after(() => new Promise(resolve => listener.close(resolve)));
+  const { port } = listener.address();
+  const child = spawn(process.execPath, ['-e',
+    'require("./server").startServer(Number(process.argv[1])).catch(error => { console.error(error.message); process.exitCode = 1; })',
+    String(port)
+  ], { cwd: path.join(__dirname, '..'), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const timeout = setTimeout(() => child.kill(), 10_000);
+  let output = '', errors = '';
+  child.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
+  child.stderr.setEncoding('utf8').on('data', chunk => { errors += chunk; });
+  try {
+    const [code] = await once(child, 'close');
+    assert.equal(code, 1);
+    assert.match(errors, new RegExp(`端口 ${port} 已被占用`));
+    assert.doesNotMatch(output, /访问密码|联赛插件/);
+    assert.doesNotMatch(errors, /Unhandled|node:events/);
+    assert.equal(listener.listening, true);
+  } finally {
+    clearTimeout(timeout);
   }
 });

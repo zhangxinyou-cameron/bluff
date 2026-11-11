@@ -29,6 +29,8 @@ npm start
 
 也可双击 `start.bat`，本机需在 PATH 中安装 Node.js，或在项目目录放置便携版 `node.exe`。每次启动都设置本次网站访问密码。通过访问密码后，用数字账号和数字密码注册或登录，随后进入牌桌大厅。游戏网页、游戏资源和 WebSocket 都要求通过两层验证。
 
+出现「端口 3000 已被占用」时，若已有 Bluff 在运行，可打开 `http://localhost:3000` 继续使用。需要重启时，等牌局结束后关闭旧的启动窗口，再运行 `start.bat`。
+
 公网访问使用 Cloudflare Tunnel：Windows 将官方 `cloudflared.exe` 放在实际启动的项目根目录（例如 `E:\bluff\cloudflared.exe`），启动时会自动创建临时公网地址。也可将工具加入系统 PATH，或设置 `CLOUDFLARED_PATH` 为工具完整路径；指定路径优先，其次项目目录，再次 PATH。缺少工具时，终端会显示需要放置的具体目录，本地服务仍能运行。
 
 从旧便携目录迁移时，需要一并复制 `cloudflared.exe` 到新目录；例如本机可将 `E:\update\cloudflared.exe` 复制至 `E:\bluff\cloudflared.exe`。工具不随 Git 上传或下载。将终端提供的 HTTPS 地址、房间号和本次密码告知朋友。临时地址会变化；服务器重启不保留内存中的房间。

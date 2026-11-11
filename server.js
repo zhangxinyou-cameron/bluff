@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
+const { once } = require('node:events');
 const { WebSocketServer } = require('ws');
 const { AccessControl, promptStartupPassword } = require('./access');
 const { RoomManager } = require('./room-manager');
@@ -145,7 +146,7 @@ function getLocalIPs() {
 }
 
 // 启动Cloudflare公网隧道
-function startTunnel() {
+function startTunnel(port) {
   const exePath = findCloudflared();
 
   if (!exePath) {
@@ -156,7 +157,7 @@ function startTunnel() {
     return;
   }
 
-  const args = ['tunnel', '--url', `http://localhost:${PORT}`];
+  const args = ['tunnel', '--url', `http://localhost:${port}`];
   const proc = spawn(exePath, args, { windowsHide:true, stdio: ['ignore', 'pipe', 'pipe'] });
 
   let publicUrl = null;
@@ -202,42 +203,59 @@ function configureIdentity(root, enableLeagues=true) {
   return {accounts,stats,leagues};
 }
 
-async function startServer() {
-  access.configure(await promptStartupPassword());
-  const dataRoot=path.join(__dirname,'data');
-  const configDir=path.join(dataRoot,'settings');
-  const selected=process.argv.find(arg=>/^--leagues=(on|off)$/.test(arg));
-  const enableLeagues=selected?selected.endsWith('=on'):(readRecords(configDir)[0]?.leagues??true);
-  if(selected)writeRecord(configDir,'server',{leagues:enableLeagues});
-  configureIdentity(dataRoot,enableLeagues);
-  console.log('  联赛插件：'+(enableLeagues?'已开启':'已关闭'));
-  server.listen(PORT, '0.0.0.0', () => {
+async function startServer(port = PORT) {
+  try {
+    const listening = once(server, 'listening');
+    server.listen(port, '0.0.0.0');
+    await listening;
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') {
+      throw new Error(`端口 ${port} 已被占用。如果已有 Bluff 启动窗口，可直接使用现有服务；需要重启时，请先关闭旧窗口。若端口由其他程序占用，请先释放端口再重试。`, { cause: error });
+    }
+    throw error;
+  }
+
+  try {
+    const password = await promptStartupPassword();
+    const dataRoot = path.join(__dirname, 'data');
+    const configDir = path.join(dataRoot, 'settings');
+    const selected = process.argv.find(arg => /^--leagues=(on|off)$/.test(arg));
+    const enableLeagues = selected ? selected.endsWith('=on') : (readRecords(configDir)[0]?.leagues ?? true);
+    if (selected) writeRecord(configDir, 'server', { leagues: enableLeagues });
+    configureIdentity(dataRoot, enableLeagues);
+    access.configure(password);
+    console.log('  联赛插件：' + (enableLeagues ? '已开启' : '已关闭'));
+  } catch (error) {
+    server.close();
+    throw error;
+  }
+
+  port = server.address().port;
   const ips = getLocalIPs();
   console.log('');
   console.log('========================================');
   console.log('  德州扑克服务器已启动');
   console.log('========================================');
   console.log('');
-  console.log('  你自己访问:  http://localhost:' + PORT);
+  console.log('  你自己访问:  http://localhost:' + port);
   console.log('');
   console.log('  同WiFi朋友:');
   if (ips.length === 0) {
     console.log('    (未检测到)');
   } else {
     ips.forEach(n => {
-      console.log(`    http://${n.ip}:${PORT}`);
+      console.log(`    http://${n.ip}:${port}`);
     });
   }
   console.log('');
   console.log('  正在生成公网地址，请等待...');
   console.log('');
 
-  startTunnel();
-  });
+  startTunnel(port);
 }
 
 if (require.main === module) startServer().catch(error => {
   console.error('服务器未启动：' + error.message);
   process.exitCode = 1;
 });
-module.exports = { server, wss, access, roomManager, rooms, configureIdentity };
+module.exports = { server, wss, access, roomManager, rooms, configureIdentity, startServer };
