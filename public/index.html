@@ -180,7 +180,7 @@
       <div class="table-center">
         <div class="community-cards" id="communityCards"></div>
         <div class="pot-display" id="potDisplay"></div>
-        <div id="actionAnnouncement" class="action-announcement" role="status" aria-live="polite"></div>
+        <div id="actionAnnouncement" class="action-announcement" role="status" aria-live="polite"><span id="betNotice" class="bet-notice" hidden></span><span id="actionAnnouncementText"></span></div>
       </div>
       <div class="players-bottom" id="playersBottom"></div>
     </div>
@@ -475,6 +475,13 @@ function potRaisePresets(game,player) {
   return [[.5,'半池'],[.75,'¾池'],[1,'满池'],[2,'双倍底池']].map(([fraction,label])=>({fraction,label,amount:Math.min(max,Math.max(min,Math.round(game.currentBet+potAfterCall*fraction)))}));
 }
 
+function compactAction(record) {
+  const names={fold:'弃牌',check:'过牌',call:'跟注',raise:'加注至',allin:'梭哈至'};
+  const amount=record.displayAmount??Number(record.label?.match(/ (\d+)$/)?.[1]);
+  if(['call','raise','allin'].includes(record.action)&&Number.isSafeInteger(amount)&&amount>=0) return {name:names[record.action],amount};
+  return {name:names[record.action]??record.label,amount:null};
+}
+
 function raiseSliderSpec(game,player) {
   const step=Math.max(1,Math.floor(game.smallBlind??game.bigBlind/2));
   const min=Math.ceil((game.currentBet+game.minRaise)/step)*step;
@@ -511,8 +518,12 @@ function renderGame(g) {
     const position=p.position;
     html += `<div class="player-name">${typeof RiverAvatars!=='undefined'?RiverAvatars.markup(p.avatar,p.name):`<span class="player-avatar" data-avatar="default">${p.isAI?'🤖':'♠'}</span>`}<span class="player-label" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span></div><div class="player-chips">${position?`<span class="player-position" title="${escapeHtml(position.description)} · 翻前第${position.preflop}位 / 翻后第${position.postflop}位">${escapeHtml(position.label)}</span>`:''}<span>💰${p.chips}</span></div>`;
     const currentAction=p.lastAction?.hand===g.handNumber&&p.lastAction.phase===g.phase?p.lastAction:null;
-    const actionText=currentAction?.label||(p.folded?'已弃牌':p.allIn?'已梭哈':!p.isActive?'本手旁观':'尚未行动');
-    html += `<div class="player-action move-${escapeHtml(currentAction?.action||'waiting')}">${escapeHtml(actionText)}${p.connected===false?' · 暂离':''}</div>`;
+    const summary=currentAction&&compactAction(currentAction);
+    const actionText=summary?.name||(p.folded?'已弃牌':p.allIn?'已梭哈':!p.isActive?'本手旁观':'尚未行动');
+    const offline=p.connected===false?' · 暂离':'';
+    const hasAmount=summary?.amount!=null;
+    const actionContent=hasAmount?`<span class="player-action-name">${escapeHtml(actionText+offline)}</span> <strong class="player-action-amount">${summary.amount}</strong>`:escapeHtml(actionText+offline);
+    html += `<div class="player-action move-${escapeHtml(currentAction?.action||'waiting')}${hasAmount?' has-amount':''}" title="${escapeHtml((currentAction?.label||actionText)+offline)}">${actionContent}</div>`;
     if (p.currentBet>0) html += `<div class="player-bet">贡献:${p.currentBet}</div>`;
     html += `<div class="hole-cards">${cardsHtml}</div>${p.privateReveal&&p.id!==mySeatId?'<span class="private-card-note">仅向你亮牌</span>':''}</div>`;
     seatHtml.set(p.id,html);

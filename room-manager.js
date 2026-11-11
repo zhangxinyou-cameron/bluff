@@ -203,10 +203,15 @@ class RoomManager {
     const result=E.applyAction(g,seatId,action,amount,expected);if(!result.ok)return result;
     const paid=action==='call'?Math.min(before.chips,Math.max(0,before.currentBet-before.bet)):action==='allin'?before.chips:action==='raise'?amount-before.bet:0;
     const level=before.bet+paid-before.currentBet>=before.minRaise&&['raise','allin'].includes(action)?before.betLevel+1:0;
-    const label=(level?`${level}-BET · `:'')+(action==='raise'?`${ACTION[action]} 至 ${amount}`:action==='allin'?`${ACTION[action]} 至 ${before.chips+before.bet}`:action==='call'?`${ACTION[action]} ${paid}`:ACTION[action]);
-    const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),raised:before.bet+paid>before.currentBet,label,street:before.phase,automatic});
+    let displayAmount=null;
+    if(action==='raise') displayAmount=amount;
+    if(action==='allin') displayAmount=before.chips+before.bet;
+    if(action==='call') displayAmount=paid;
+    const amountLabel=displayAmount===null?'':`${action==='call'?' ':' 至 '}${displayAmount}`;
+    const label=`${level?`${level}-BET · `:''}${ACTION[action]}${amountLabel}`;
+    const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),displayAmount,betLevel:level,raised:before.bet+paid>before.currentBet,label,street:before.phase,automatic});
     // The closing action belongs in history, never in the new street's markers.
-    if(g.phase===before.phase)p.lastAction={id:event.id,action,label,hand:g.handNumber,phase:before.phase,automatic};
+    if(g.phase===before.phase)p.lastAction={id:event.id,action,label,displayAmount,hand:g.handNumber,phase:before.phase,automatic};
     else for(const player of g.players)player.lastAction=null;
     if(g.communityCards.length>before.cards)this.event(room,'street',`${PHASE[g.phase]||'公共牌发完'} · ${g.communityCards.map(c=>'♠♥♣♦'[c.suit]+({11:'J',12:'Q',13:'K',14:'A'}[c.rank]||c.rank)).join(' ')}`);
     const changed=g.communityCards.length>before.cards;

@@ -8,7 +8,7 @@
   const registryKey='river_saved_seats_v3';
   const readRegistry=()=>{try{return JSON.parse(localStorage.getItem(registryKey)||'{}');}catch(_){return{};}};
   const clientId=(()=>{try{let id=localStorage.getItem('river_client_id');if(!id){id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);localStorage.setItem('river_client_id',id);}return id;}catch(_){return '';}})();
-  let rendering=false,renderErrors=0;
+  let rendering=false,renderErrors=0,betNoticeTimer=null;
   let warningUntil=0;
   const now=()=>Date.now()+clockOffset;
   const safeRead=()=>{try{return JSON.parse(sessionStorage.getItem(storageKey)||'null');}catch(_){return null;}};
@@ -70,6 +70,24 @@
       else{status('界面异常，正在读取完整状态');raw({type:'sync',afterEvent:eventId});}
     }finally{rendering=false;}
   }
+  function updateBetNotice(event){
+    const notice=node('betNotice');
+    const level=event?.betLevel??Number(event?.label?.match(/^(\d+)-BET/)?.[1]);
+    const elapsed=now()-(event?.time??0);
+    if(!(level>=2)||elapsed>=2000){notice.hidden=true;return;}
+    const key=`${lastSnapshot.roomCode}-${event.id}`;
+    if(notice.dataset.event===key)return;
+    clearTimeout(betNoticeTimer);
+    notice.dataset.event=key;
+    notice.textContent=`${level}-BET`;
+    notice.hidden=false;
+    const duration=2000-Math.max(0,elapsed);
+    notice.getAnimations?.().forEach(animation=>animation.cancel());
+    if(!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){
+      notice.animate?.([{opacity:1},{opacity:1,offset:.6},{opacity:0}],{duration,fill:'both'});
+    }
+    betNoticeTimer=setTimeout(()=>{notice.hidden=true;},duration);
+  }
   function draw(force=false){
     if(stopped)return;
     const data=lastSnapshot;if(!data)return;
@@ -120,9 +138,11 @@
     node('rulesBadge').textContent=`${state.variant==='short'?'短牌':'标准德扑'} · ${blindLabel}`;
     node('rulesBadge').title=(state.variant==='short'?'36张6—A，同花大于葫芦，A6789最小顺子；':'52张标准德州扑克；')+(blindRule==='position'?`庄家左手第一位 ${state.bigBlind}、第二位 ${Math.floor(state.bigBlind/2)}，其他人不付底注`:blindRule==='ante'?`全员底注 ${state.bigBlind}，庄家另付一份盲注`:`小盲 ${Math.floor(state.bigBlind/2)} / 大盲 ${state.bigBlind}`);
     const last=events.filter(event=>event.kind==='action'&&event.hand===state.handNumber&&event.street===state.phase).at(-1);
-    node('actionAnnouncement').textContent=last?last.text:`第 ${state.handNumber} 手 · ${PHASE_NAMES[state.phase]||'本轮'} · 等待行动`;
+    const summary=last&&compactAction(last);
+    node('actionAnnouncementText').textContent=summary?`${last.name} ${last.automatic?'超时自动 ':''}${summary.name}${summary.amount===null?'':' '+summary.amount}`:`第 ${state.handNumber} 手 · ${PHASE_NAMES[state.phase]||'本轮'} · 等待行动`;
+    updateBetNotice(last);
     node('actionAnnouncement').dataset.action=last?.action||'deal';
-    if(presentation?.timeline&&remaining>0){const count=state.communityCards.length,board=state.runoutBoards?.length||1,showingHands=now()-presentation.startedAt<presentation.timeline.showHandsMs;node('phaseText').textContent=showingHands?'亮牌展示':'梭哈跑马';node('actionAnnouncement').textContent=showingHands?'争池玩家手牌已亮 · 先看牌再跑马':`${presentation.timeline.boardCount>1?'第 '+board+' 组 · ':''}${count>=5?'河牌已开 · 停留看牌':count===4?'转牌已开':count===3?'翻牌已开':'等待翻牌'} · 慢慢揭晓`;}
+    if(presentation?.timeline&&remaining>0){const count=state.communityCards.length,board=state.runoutBoards?.length||1,showingHands=now()-presentation.startedAt<presentation.timeline.showHandsMs;node('phaseText').textContent=showingHands?'亮牌展示':'梭哈跑马';node('actionAnnouncementText').textContent=showingHands?'争池玩家手牌已亮 · 先看牌再跑马':`${presentation.timeline.boardCount>1?'第 '+board+' 组 · ':''}${count>=5?'河牌已开 · 停留看牌':count===4?'转牌已开':count===3?'翻牌已开':'等待翻牌'} · 慢慢揭晓`;}
     if(data.paused)status('异常检测已暂停牌局以保护筹码，请联系房主检查','error');
     if(node('bankDialog').open){renderBank(state);if(locked&&state.phase==='hand_over'){node('bankBorrowBtn').disabled=true;node('bankRepayBtn').disabled=true;if(remaining>0)node('bankStatus').textContent='结算过场中，稍后可借还款。';}}
     window.RiverTable?.render(data,locked);

@@ -67,10 +67,20 @@ test('action boxes ignore stale streets and hands, preserving folded and all-in 
   game.players[1].lastAction={hand:game.handNumber-1,phase:'flop',action:'call',label:'上一手跟注'};
   game.players[2].lastAction={hand:game.handNumber,phase:'flop',action:'check',label:'本轮过牌'};
   game.players[3].folded=true;v.render(game,0);
-  const boxes=()=>[...(v.elements.get('playersTop').innerHTML+v.elements.get('playersBottom').innerHTML).matchAll(/<div class="player-action [^"]*">([^<]*)<\/div>/g)].map(m=>m[1]);
-  assert.deepEqual(boxes().sort(),['尚未行动','尚未行动','本轮过牌','已弃牌'].sort());
+  const boxes=()=>[...(v.elements.get('playersTop').innerHTML+v.elements.get('playersBottom').innerHTML).matchAll(/<div class="player-action [^"]*"[^>]*>([^<]*)<\/div>/g)].map(m=>m[1]);
+  assert.deepEqual(boxes().sort(),['尚未行动','尚未行动','过牌','已弃牌'].sort());
   game.players[1].allIn=true;game.phase='turn';v.render(game,0);
   assert.deepEqual(boxes().sort(),['尚未行动','已梭哈','尚未行动','已弃牌'].sort());
+});
+
+test('seat amounts take precedence over English labels and betting levels in current and older snapshots',()=>{
+  const v=view(),game=E.createGame([{id:0,chips:2000},{id:1,chips:2000}],20);E.startHand(game,()=>.42);
+  game.players[0].lastAction={action:'raise',hand:game.handNumber,phase:game.phase,displayAmount:180,label:'3-BET · 加注 RAISE 至 180'};
+  game.players[1].lastAction={action:'allin',hand:game.handNumber,phase:game.phase,label:'4-BET · 梭哈 ALL IN 至 1960'};
+  v.render(game,0);const cards=v.elements.get('playersTop').innerHTML+v.elements.get('playersBottom').innerHTML;
+  assert.match(cards,/<span class="player-action-name">加注至<\/span> <strong class="player-action-amount">180<\/strong>/);
+  assert.match(cards,/<span class="player-action-name">梭哈至<\/span> <strong class="player-action-amount">1960<\/strong>/);
+  assert.match(cards,/title="3-BET · 加注 RAISE 至 180"/);
 });
 
 test('disabled win rate hides and clears estimates without calculating, but keeps hand information',()=>{

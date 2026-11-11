@@ -8,9 +8,23 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
     if(code){await p.waitForFunction(()=>wsConnected&&mySeatId>0);await p.locator('#readyBtn').click();await idle(p);}else{await p.locator('#createBtn').click();await p.locator('#waitTip').filter({hasText:'房间已创建'}).waitFor();for(const [id,v]of [['allowBuyInSel','yes'],['deckModeSel','standard'],['blindModeSel','standard']]){await p.locator('#'+id).selectOption(v);await idle(p);}}return p;}
   let host,pages,room;
   async function act(action){const g=room.game,actor=pages[g.players[g.currentPlayerIndex].id],rev=g.revision;await actor.locator('.action-'+action).waitFor();await actor.locator('.action-'+action).click();await idle(actor);await host.waitForFunction(rev=>g.revision>rev,rev);}
-  async function raise(multiple,level){const g=room.game,page=pages[g.players[g.currentPlayerIndex].id],rev=g.revision;await page.locator('.action-raise').filter({hasText:level+'-BET'}).waitFor();await page.locator('.action-raise').click();assert.match(await page.locator('.raise-level').textContent(),new RegExp(level+'-BET'));const before=g.currentBet;await page.locator(`[data-raise-multiple="${multiple}"]`).click();assert.equal(await page.locator('#raiseAmount').inputValue(),String(before*multiple));await page.locator('.action-confirm').click();await idle(page);await host.waitForFunction(rev=>g.revision>rev,rev);assert.equal(g.betLevel,level);}
+  async function raise(multiple,level){
+    const g=room.game,id=g.players[g.currentPlayerIndex].id,page=pages[id],rev=g.revision,amount=g.currentBet*multiple;
+    await page.locator('.action-raise').filter({hasText:level+'-BET'}).waitFor();await page.locator('.action-raise').click();
+    assert.match(await page.locator('.raise-level').textContent(),new RegExp(level+'-BET'));
+    await page.locator(`[data-raise-multiple="${multiple}"]`).click();assert.equal(await page.locator('#raiseAmount').inputValue(),String(amount));
+    await page.locator('.action-confirm').click();await idle(page);await host.waitForFunction(rev=>g.revision>rev,rev);assert.equal(g.betLevel,level);
+    for(const viewer of pages){
+      const action=viewer.locator(`.player-card[data-seat="${id}"] .player-action`);
+      const number=action.locator('.player-action-amount');await number.waitFor();assert.equal(await number.textContent(),String(amount));
+      assert.equal(await number.evaluate(e=>{const a=e.getBoundingClientRect(),b=e.parentElement.getBoundingClientRect();return a.left>=b.left&&a.right<=b.right&&e.scrollWidth<=e.clientWidth;}),true);
+      assert.doesNotMatch(await action.textContent(),/BET|RAISE/);
+      await viewer.locator('#betNotice').filter({hasText:level+'-BET'}).waitFor();
+    }
+    if(level===3){await host.locator('#betNotice').waitFor({state:'hidden',timeout:4000});assert.equal(await host.locator('#actionAnnouncementText').textContent().then(text=>text.includes(String(amount))),true);}
+  }
   try{
-    host=await open();assert.equal(await host.locator('#runoutDelaySel').inputValue(),'3000');const code=await host.locator('#displayRoomCode').textContent();pages=[host,await open(code)];room=roomManager.games.get(code);await host.locator('#startBtn').click();await host.waitForFunction(()=>!!g);
+    host=await open();assert.equal(await host.locator('#runoutDelaySel').inputValue(),'3000');const code=await host.locator('#displayRoomCode').textContent();pages=[host,await open(code)];await pages[1].setViewportSize({width:320,height:568});room=roomManager.games.get(code);await host.locator('#startBtn').click();await host.waitForFunction(()=>!!g);
     for(let hand=1;hand<=2;hand++){
       if(hand===1){await raise(3,2);await raise(3,3);await raise(4,4);assert.ok(room.history.some(e=>e.label?.startsWith('3-BET')));assert.ok(room.history.some(e=>e.label?.startsWith('4-BET')));}
       await act('allin');await act('call');await host.locator('#runoutPanel').waitFor({state:'visible'});
