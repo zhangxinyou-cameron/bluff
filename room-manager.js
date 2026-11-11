@@ -19,6 +19,17 @@ class RoomManager {
     const event={id:room.history.length+1,kind,text,time:Date.now(),hand:room.game?.handNumber||0,phase:room.game?.phase||'waiting',...extra};
     room.history.push(event);return event;
   }
+  createRoom(code,leagueMatch){
+    const room={code,leagueMatch,people:new Map(),settings:{bigBlind:20,initChips:2000,minPlayers:2,allowBuyIn:false,showWinRate:true,deckMode:'auto',blindMode:'auto'},maxPlayers:4,aiSlots:{},game:null,history:[],version:0,blockedUntil:0,presentation:null,deadline:0,aiDue:0,paused:false,lastActivity:Date.now()};
+    this.games.set(code,room);this.connections.set(code,new Map());
+    return room;
+  }
+  openLeagueRoom(match){
+    const {uid,name,avatar}=this.accounts.byUid.get(match.owner);
+    const room=this.createRoom(match.code,match);
+    const host=Object.assign(this.newPerson(0,name,avatar),{uid,connected:false,ready:false});
+    room.people.set(0,host);
+  }
   join(ws,data){
     const code=data.roomCode;
     if(typeof code!=='string'||!/^\d{6}$/.test(code)){send(ws,{type:'error',message:'请输入6位数字房间号'});return;}
@@ -29,7 +40,7 @@ class RoomManager {
     if(leagueMatch&&room?.game?.phase!=='tournament_over'){
       try{
         this.leagues.admit(leagueMatch,uid);
-        if(!room&&leagueMatch.owner!==uid)throw new Error('等待主办方打开比赛房');
+        if(!room&&leagueMatch.owner!==uid)throw new Error('等待本场房主打开比赛房');
         if(!room&&data.seatId!==0)throw new Error('请从联赛页面打开比赛房');
       }catch(error){send(ws,{type:'error',message:error.message});return;}
     }
@@ -60,8 +71,7 @@ class RoomManager {
       if(old&&old!==ws){old.superseded=true;old.close(4001,'Seat resumed elsewhere');}
     }else if(data.seatId===0){
       if(room){send(ws,{type:'error',message:'房间号已被使用，请重新创建房间'});return;}
-      room={code,leagueMatch,people:new Map(),settings:{bigBlind:20,initChips:2000,minPlayers:2,allowBuyIn:false,showWinRate:true,deckMode:'auto',blindMode:'auto'},maxPlayers:4,aiSlots:{},game:null,history:[],version:0,blockedUntil:0,presentation:null,deadline:0,aiDue:0,paused:false,lastActivity:Date.now()};
-      this.games.set(code,room);this.connections.set(code,new Map());
+      room=this.createRoom(code,leagueMatch);
       person=this.newPerson(0,data.name,data.avatar);room.people.set(0,person);
     }else{
       if(!room){send(ws,{type:'error',message:'房间不存在或房主已离线，请核对房间号'});return;}
@@ -76,7 +86,7 @@ class RoomManager {
     }
     if(ws.roomCode&&ws.roomCode!==code){send(ws,{type:'error',message:'请先离开原房间'});return;}
     const resumed=!!data.resumeToken;
-    person.connected=true;person.offlineAt=0;person.ready=resumed?false:person.id===0;
+    person.connected=true;person.offlineAt=0;person.ready=person.id===0;
     if(typeof data.clientId==='string'&&/^[a-zA-Z0-9-]{16,100}$/.test(data.clientId))person.clientId=data.clientId;
     ws.roomCode=code;ws.seatId=person.id;ws.playerName=person.name;ws.eventCursor=Number.isSafeInteger(data.afterEvent)?Math.max(0,data.afterEvent):0;
     this.connections.get(code).set(person.id,ws);
@@ -112,7 +122,7 @@ class RoomManager {
       commandSeq:room.people.get(ws.seatId)?.commandSeq||0,settings:room.settings,maxPlayers:room.maxPlayers,aiSlots:room.aiSlots,
       seats:Array.from({length:Math.max(...room.people.keys())+1},(_,id)=>{const p=room.people.get(id);return p&&!p.retired?{id:'player-'+id,name:p.name,avatar:p.avatar,isHost:id===0,ready:p.ready,connected:p.connected}:null;}),
       game:this.serialize(room,ws.seatId),presentation:room.presentation,interactiveAt:room.blockedUntil,turnDeadline:room.deadline,paused:room.paused,
-      league:room.leagueMatch?{code:room.leagueMatch.leagueCode,mode:room.leagueMatch.mode}:null,
+      league:room.leagueMatch?{code:room.leagueMatch.leagueCode,mode:room.leagueMatch.mode,name:room.leagueMatch.name}:null,
       reportId:room.reportId,reportPending:!!room.reportError,
       events,hasMore:ws.eventCursor<room.history.length,lastEventId:room.history.length,...this.extraSnapshot(room,ws.seatId)});
   }

@@ -92,7 +92,10 @@
     <button class="home-btn btn-create" id="createBtn">创建房间 <span aria-hidden="true">↗</span></button>
     <button class="home-btn btn-join" id="joinBtn">加入朋友的牌局</button>
     <button class="home-btn btn-create" id="confirmJoinBtn" style="display:none">确认加入</button>
-    <div class="home-account-links" id="homeAccountLinks" hidden><a id="homeProfile" href="/club.html?profile">个人档案</a><a id="homeLeagues" href="/club.html" hidden>联赛</a></div>
+    <div id="homeAccountLinks" class="home-account-links" hidden>
+      <a id="homeLeagues" class="home-btn btn-create" href="/club.html" hidden>联赛 <span aria-hidden="true">↗</span></a>
+      <a id="homeProfile" class="home-btn btn-join" href="/club.html?profile">个人档案</a>
+    </div>
     <p class="panel-footnote">2—8 人同桌 · ≤4 人短牌 · ≥5 人标准德扑</p>
     </section>
   </div>
@@ -100,6 +103,10 @@
   <!-- 等待房间 -->
   <div id="waitScreen" class="wait-screen" style="display:none">
     <div class="wait-header">
+      <div id="leagueWaitHeader" class="league-wait-header" hidden>
+        <div><small id="leagueWaitMode"></small><strong id="leagueWaitName"></strong></div>
+        <a id="backToLeague" class="sound-button" href="/club.html">返回联赛</a>
+      </div>
       <div class="wait-title">牌局已就位 · 房间号</div>
       <div class="room-code-display" id="displayRoomCode"></div>
       <div class="share-link" id="shareLink" role="button" tabindex="0" title="复制房间链接"></div>
@@ -160,6 +167,7 @@
     </div>
 
     <div class="seats" id="seats"></div>
+    <p id="leagueReadyState" class="league-ready-state" hidden aria-live="polite"></p>
     <button class="wait-btn btn-ready" id="readyBtn">准备</button>
     <button class="wait-btn btn-start" id="startBtn" style="display:none">开始游戏</button>
     <button class="wait-btn btn-leave" id="leaveBtn">离开房间</button>
@@ -241,6 +249,7 @@ let ws = null;
 let wsConnected = false;
 let connectionTimer = null;
 let isHost = false;
+let lobbyLeague = null;
 let mySeatId = -1;
 let roomCode = '';
 let myName = '玩家' + Math.floor(Math.random()*100);
@@ -422,7 +431,7 @@ function renderSeats() {
       </div>`;
     } else {
       const isAI = aiSlots[i];
-      if (isHost) {
+      if (isHost && !lobbyLeague) {
         html += `<div class="seat" role="button" tabindex="0" aria-label="${isAI?'移除人机':'添加人机'}" onclick="toggleAI(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
           <div class="seat-avatar">${isAI?'🤖':'➕'}</div>
           <div class="seat-name">${isAI?'人机':'空位'}</div>
@@ -438,11 +447,20 @@ function renderSeats() {
     }
   }
   document.getElementById('seats').innerHTML = html;
+  const humanSeats = seats.filter(s => s && !s.isAI && s.connected!==false);
+  const allHumanReady = humanSeats.every(s => s.ready || s.isHost);
   if (isHost) {
-    const humanSeats = seats.filter(s => s && !s.isAI && s.connected!==false);
-    const allHumanReady = humanSeats.every(s => s.ready || s.isHost);
     const totalPlayers = seats.filter(s=>s&&s.connected!==false).length + Object.keys(aiSlots).filter(k=>aiSlots[k] && !seats[k]).length;
-    document.getElementById('startBtn').style.display = (wsConnected && allHumanReady && totalPlayers >= 2) ? 'block' : 'none';
+    const canStart = wsConnected && allHumanReady && totalPlayers >= 2;
+    const start = document.getElementById('startBtn');
+    start.style.display = lobbyLeague || canStart ? 'block' : 'none';
+    start.disabled = !!lobbyLeague && !canStart;
+  }
+  if(lobbyLeague){
+    const readyCount=humanSeats.filter(s=>s.ready||s.isHost).length;
+    const text=humanSeats.length<2?'至少需要 2 人入座':!humanSeats.some(s=>s.isHost)?'等待房主进入':
+      allHumanReady?'全员已准备，房主可以开始':'等待其他玩家准备';
+    document.getElementById('leagueReadyState').textContent=`${readyCount}/${humanSeats.length} 已准备 · ${text}`;
   }
   const readyBtn = document.getElementById('readyBtn');
   const seat = seats[mySeatId];
@@ -1183,7 +1201,7 @@ document.getElementById('readyBtn').onclick = () => {
 
 // 开始游戏（房主）
 document.getElementById('startBtn').onclick = () => {
-  if (!isHost || !wsConnected || seats.some(s => s && !s.isHost && !s.ready)) return;
+  if (!isHost || !wsConnected || seats.some(s => s && !s.isHost && s.connected!==false && !s.ready)) return;
   startGameHost();
 };
 

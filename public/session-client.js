@@ -99,6 +99,14 @@
     node('activityPanel').hidden=false;node('connectionBanner').hidden=false;
     window.RiverTable?.layout(data,remaining);
     if(!state){
+      lobbyLeague=data.league||null;
+      node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=!lobbyLeague;
+      if(lobbyLeague){
+        node('waitScreen').dataset.league=lobbyLeague.mode;
+        node('leagueWaitMode').textContent=lobbyLeague.mode==='team'?'联赛 · 团队赛':'联赛 · 个人赛';
+        node('leagueWaitName').textContent=lobbyLeague.name;
+        node('backToLeague').href='/club.html?league='+encodeURIComponent(lobbyLeague.code);
+      }else delete node('waitScreen').dataset.league;
       showWaitScreen();
       node('maxPlayersVal').textContent=maxPlayers;
       for(const [id,value]of[['bigBlindSel',settings.bigBlind],['initChipsSel',settings.initChips],['minPlayersSel',settings.minPlayers],['allowBuyInSel',settings.allowBuyIn?'yes':'no']])node(id).value=String(value);
@@ -232,7 +240,7 @@
     };
     clearTimeout(connectionTimer);connectionTimer=setTimeout(()=>{if(ws===socket&&!wsConnected){socket.close();}},12000);
   }
-  async function begin(code,host){
+  async function begin(code,host,fromLeague=false){
     if(identity?.profile){
       const name=node('nameInput').value.trim();
       if(name&&name!==identity.profile.name){
@@ -242,7 +250,11 @@
     }
     intentional=true;if(ws){ws.onclose=null;ws.close();}
     g=null;clientGameState=null;lastSnapshot=null;lastVersion=-1;events.length=0;seen.clear();eventId=0;pending=null;sequence=0;stopped=false;retry=0;
-    const saved=safeRead(),known=readRegistry()[code];entry=saved?.roomCode===code?saved:known||{roomCode:code,isHost:host};sequence=entry.commandSeq||0;
+    const saved=safeRead(),known=readRegistry()[code];
+    const resume=saved?.roomCode===code?saved:known;
+    entry=fromLeague||!resume?{roomCode:code,isHost:host}:resume;sequence=entry.commandSeq||0;
+    lobbyLeague=null;delete node('waitScreen').dataset.league;
+    node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=true;
     roomCode=code;isHost=host;mySeatId=host?0:-1;seats=[];wsConnected=false;showWaitScreen();setConnectionStatus('正在连接房间…');lastReceived=0;connect();
   }
   function leave({reload=true,permanent=false}={}){intentional=true;stopped=true;save();raw({type:'leaveRoom',permanent});clearTimeout(reconnectTimer);if(permanent&&entry){try{const registry=readRegistry();delete registry[entry.roomCode];localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}}entry=null;save();window.RiverTable?.stop();ws?.close();if(reload)location.href=location.pathname;}
@@ -301,7 +313,7 @@
       const leagueMatch=new URLSearchParams(location.search).get('leagueMatch');
       if(leagueMatch){
         const table=await window.RiverAccount.request('/api/league?match='+encodeURIComponent(leagueMatch));
-        history.replaceState(null,'',location.pathname);begin(table.code,table.host);return;
+        history.replaceState(null,'',location.pathname);begin(table.code,table.host,true);return;
       }
     }catch(error){
       if(error.status===401){location.replace('/account.html');return;}

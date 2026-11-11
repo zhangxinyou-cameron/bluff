@@ -40,6 +40,9 @@
     return button;
   };
   const link = (text, href) => el('a', { href }, text);
+  const buttonLink = (text, href, secondary = false) => el('a', { href, className: 'club-button' + (secondary ? ' club-secondary' : '') }, text);
+  const badge = (text, accent = false) => el('span', { className: 'club-badge' + (accent ? ' club-badge-active' : '') }, text);
+  const metric = (name, value) => el('div', { className: 'club-metric' }, el('span', {}, name), el('strong', {}, value));
   const field = (text, name, properties = {}) => el('label', {}, text, el('input', { name, required: true, ...properties }));
   const numeric = (text, name, value, min, max) => field(text, name, { type: 'number', value, min, max });
   const select = (text, name, options) => el('label', {}, text, el('select', { name },
@@ -77,23 +80,69 @@
 
   async function showList() {
     if (!identity.leagues) { display(el('h1', {}, '联赛'), muted('联赛插件当前已关闭。')); return; }
-    const { leagues } = await request('/api/league');
+    const [{ leagues }, { reports }] = await Promise.all([request('/api/league'), request('/api/reports')]);
+    const leagueNames = new Map(leagues.map(league => [league.code, league.name]));
+    const history = reports.filter(report => report.leagueCode);
+    const valid = history.filter(report => !report.voidReason);
+    const net = valid.reduce((sum, report) => sum + report.bb, 0);
+    const signed = value => (value > 0 ? '+' : '') + number(value);
+    const results = history.map(report => el('article', { className: 'club-record' },
+      el('div', {}, el('h3', {}, report.name || '联赛比赛'),
+        el('small', {}, `${leagueNames.get(report.leagueCode) || '联赛'} · ${new Date(report.endedAt).toLocaleDateString('zh-CN')} · 出场 ${report.playerHands} 手`)),
+      el('div', { className: 'club-record-actions' },
+        badge(report.voidReason ? '已作废' : signed(report.bb) + ' BB', !report.voidReason && report.bb > 0),
+        buttonLink('看赛报', reportUrl(report.id), true))));
+    const cards = leagues.length ? [...leagues].sort((a, b) => Number(!!a.endedAt) - Number(!!b.endedAt)).map(league =>
+      el('article', { className: 'club-league-card' },
+        el('div', {}, row(badge(modeName(league.mode)), badge(league.endedAt ? '已结算' : '进行中', !league.endedAt)),
+          el('h3', {}, league.name),
+          el('small', {}, `房间号 ${league.code}${league.owner === identity.profile.uid ? ' · 我主办' : ''}`)),
+        buttonLink(league.endedAt ? '查看联赛' : '进入联赛', leagueUrl(league.code), !!league.endedAt))) :
+      muted('还没有参加联赛。');
+    display(el('header', { className: 'club-hero' }, el('h1', {}, '联赛大厅')),
+      el('div', { className: 'club-dashboard' },
+        el('section', { className: 'club-dashboard-stats', 'aria-label': '个人联赛战绩' },
+          panel('个人联赛战绩', el('div', { className: 'club-person' },
+            el('span', { className: 'club-avatar', 'aria-hidden': 'true' }, RiverAvatars.get(identity.profile.avatar).emoji),
+            el('strong', {}, identity.profile.name)),
+          el('div', { className: 'club-metrics' }, metric('参赛场次', valid.length),
+            metric('累计手数', valid.reduce((sum, report) => sum + report.playerHands, 0)), metric('净收益 BB', signed(net)))),
+          panel('参赛历史', results.length ? el('div', { className: 'club-card-list' }, results) : muted('完成联赛比赛后，赛报会出现在这里。'))),
+        el('section', { className: 'club-dashboard-actions', 'aria-label': '联赛操作' },
+          el('div', { className: 'club-launch-actions' }, buttonLink('创建联赛', '/club.html?new'), buttonLink('加入联赛', '/club.html?join', true)),
+          panel('我的联赛', el('div', { className: 'club-card-list' }, cards)))));
+  }
+
+  const codeField = title => field(title, 'code', { inputmode: 'numeric', pattern: '[0-9]{8}', maxlength: 8, placeholder: '8 位数字' });
+
+  function showCreate() {
+    const formats = el('fieldset', { className: 'club-mode-options' }, el('legend', {}, '联赛赛制'),
+      ['solo', 'team'].map(mode => el('label', { className: 'club-mode-option' },
+        el('input', { type: 'radio', name: 'mode', value: mode, checked: mode === 'solo' }),
+        el('strong', {}, modeName(mode)))));
+    const teams = el('div', { className: 'club-form-grid', hidden: true },
+      numeric('队伍数量', 'teamCount', 2, 2, 16), numeric('每队名额', 'teamSize', 3, 1, 8));
     const create = form('创建联赛', [
-      field('联赛名称', 'name', { maxlength: 40 }),
-      select('联赛赛制 · 创建后固定', 'mode', [['solo', '个人赛'], ['team', '团队赛']]),
-      el('div', { className: 'club-form-grid', id: 'teamFields', hidden: true },
-        numeric('队伍数量', 'teamCount', 2, 2, 16), numeric('每队名额', 'teamSize', 3, 1, 8)),
-      el('div', { className: 'club-form-grid' },
-        numeric('每场最低手数', 'minHands', 5, 1, 500), numeric('上榜最低场数', 'minMatches', 2, 1, 100))
+      el('div', { className: 'club-form-grid' }, field('联赛名称', 'name', { maxlength: 40 }), codeField('联赛房间号')),
+      formats, muted('本届所有场次沿用选定的赛制。'), teams,
+      el('details', { className: 'club-details' }, el('summary', {}, '计分门槛'),
+        el('div', { className: 'club-form-grid' }, numeric('每场最低手数', 'minHands', 5, 1, 500),
+          numeric('上榜最低场数', 'minMatches', 2, 1, 100)))
     ], values => mutate('create', { ...values, teamCount: +values.teamCount, teamSize: +values.teamSize,
       minHands: +values.minHands, minMatches: +values.minMatches }));
-    create.elements.mode.onchange = () => { create.querySelector('#teamFields').hidden = create.elements.mode.value !== 'team'; };
-    const join = form('加入联赛', [field('8 位联赛码', 'code', { inputmode: 'numeric', pattern: '[0-9]{8}', maxlength: 8 })],
-      values => mutate('join', values));
-    const cards = leagues.length ? list(leagues.map(league => row(link(league.name, leagueUrl(league.code)),
-      el('small', {}, modeName(league.mode) + ' · ' + (league.endedAt ? '历史' : '进行中') + (league.owner === identity.profile.uid ? ' · 我主办' : '')))))
-      : muted('加入或创建联赛后，联赛会出现在这里。');
-    display(el('h1', {}, '我的联赛'), panel('联赛列表', cards), grid(panel('加入联赛', join), panel('创建联赛', create)));
+    formats.onchange = () => {
+      teams.hidden = create.elements.mode.value !== 'team';
+      for (const input of teams.querySelectorAll('input')) input.disabled = teams.hidden;
+    };
+    formats.onchange();
+    display(el('section', { className: 'club-form-page' }, buttonLink('返回联赛大厅', '/club.html', true),
+      el('div', { className: 'club-panel' }, el('h1', {}, '创建联赛'), create)));
+  }
+
+  function showJoin() {
+    const join = form('加入联赛', [codeField('联赛房间号')], values => mutate('join', values));
+    display(el('section', { className: 'club-form-page' }, buttonLink('返回联赛大厅', '/club.html', true),
+      el('div', { className: 'club-panel' }, el('h1', {}, '加入联赛'), join)));
   }
 
   function standings(headers, rows) {
@@ -184,25 +233,46 @@
       muted('至少打过 10 手，且一维有 5 次适用机会后才显示正式分数。胜率和赔率为模型估算。'));
   }
 
+  function matchRoom(league, match, canPlay, canCancel) {
+    const member = league.members.find(person => person.uid === match.owner);
+    const waiting = match.status === 'waiting';
+    const seats = match.seats || [];
+    const readyCount = seats.filter(seat => seat.ready).length;
+    const joined = seats.some(seat => seat.uid === identity.profile.uid);
+    const mayReturn = waiting || match.participantUids?.includes(identity.profile.uid);
+    const enter = !mayReturn ? muted('本场已开赛，可等待下一场。') : !canPlay ? muted('加入队伍后即可入座。') :
+      buttonLink(waiting ? joined ? '返回等待房' : '加入比赛房' : '返回比赛房', tableUrl(match.id));
+    return el('section', { className: 'club-match club-panel' },
+      el('div', { className: 'club-match-top' },
+        el('div', {}, row(badge(states[match.status], waiting), badge(modeName(league.mode))),
+          el('h2', {}, match.name), muted(`房间号 ${match.code} · 房主 ${member?.name || '玩家'}`)),
+        metric(waiting ? '已准备' : '参赛人数', waiting ? `${readyCount} / ${seats.length}` : match.participantCount)),
+      waiting ? el('div', { className: 'club-seat-list', 'aria-label': '等待房玩家' }, seats.length ? seats.map(seat =>
+        el('div', { className: 'club-seat-chip' }, el('span', { 'aria-hidden': 'true' }, RiverAvatars.get(seat.avatar).emoji),
+          el('div', {}, el('strong', {}, seat.name), el('small', {}, seat.host ? '房主' : seat.ready ? '已准备' : '未准备'))))
+        : muted('等待玩家入座。')) : null,
+      waiting ? muted(`${seats.length} / ${match.capacity || 4} 已入座`) : null,
+      row(enter, canCancel ? action('中止比赛', () => {
+        if (confirm('中止这场比赛并关闭牌桌？')) run(() => mutate('cancel'));
+      }, true) : null));
+  }
+
   async function showLeague(force = false) {
     const league = await request('/api/league?code=' + encodeURIComponent(leagueCode));
     const signature = JSON.stringify(league);
     if (!force && (signature === lastDetail || view.contains(document.activeElement) &&
         document.activeElement.matches('input, select, textarea'))) return;
     lastDetail = signature;
-    const owner = league.owner === identity.profile.uid;
+    const me = identity.profile.uid;
+    const owner = league.owner === me;
     const active = league.matches.find(match => ['waiting', 'running'].includes(match.status));
     const mode = modeName(league.mode);
-    const canPlay = league.mode === 'solo' || league.teams.some(team => team.members.includes(identity.profile.uid));
-    const activePanel = active ? panel('当前比赛', el('h3', {}, active.name), muted(states[active.status]),
-      row(active.status === 'running' && !active.participantUids.includes(identity.profile.uid) ? muted('本场已经开赛，可等待下一场。') :
-        canPlay ? el('a', { href: tableUrl(active.id), className: 'club-button' }, owner && active.status === 'waiting' ? '打开等待房' : '进入比赛房') :
-        muted('先加入队伍才能入座。'), owner ? action('中止比赛', () => {
-        if (confirm('中止这场比赛并关闭牌桌？')) run(() => mutate('cancel'));
-      }, true) : null)) : null;
-    const organizer = owner && !league.endedAt && !active ? panel('主办方操作',
-      form('创建下一场', [field('比赛名称（可选）', 'name', { required: false, maxlength: 40 })], values => mutate('open', values)),
-      action('结算联赛', () => { if (confirm('结算后冻结积分榜和队伍名单，继续吗？')) run(() => mutate('finish')); }, true)) : null;
+    const canPlay = league.mode === 'solo' || league.teams.some(team => team.members.includes(me));
+    const matchPanel = active ? matchRoom(league, active, canPlay, owner || active.owner === me) :
+      !league.endedAt ? el('section', { className: 'club-match club-panel' }, el('h2', {}, '比赛房'),
+        canPlay && (league.mode !== 'team' || league.teams.length >= 2) ?
+          form('创建比赛房', [field('比赛名称（可选）', 'name', { required: false, maxlength: 40 })], values => mutate('open', values)) :
+          muted(canPlay ? '至少需要创建两支队伍才能开房。' : '加入队伍后即可创建或加入比赛房。')) : null;
     const history = panel('比赛记录', league.matches.length ? list([...league.matches].reverse().map(match => {
       const text = match.voidReason ? '已作废 · ' + match.voidReason : states[match.status];
       const teamResult = league.ledger.find(entry => entry.id === match.id)?.teams || [];
@@ -210,22 +280,30 @@
         const name = league.teams.find(row => row.id === team.id)?.name;
         return `${name} ${number(team.bb)} BB / ${number(team.points)} 分`;
       }).join(' · ');
-      return [row(match.status === 'completed' ? link(match.name, reportUrl(match.id)) : match.name,
-        el('small', {}, text + (match.hands == null ? '' : ` · ${match.hands} 手${match.hands < league.minHands ? ' · 未达计分门槛' : ''}`))),
+      return [row(el('strong', {}, match.name),
+        badge(text + (match.hands == null ? '' : ` · ${match.hands} 手${match.hands < league.minHands ? ' · 未达计分门槛' : ''}`))),
       description ? muted(description) : null,
+      row(match.status === 'completed' ? buttonLink('查看赛报', reportUrl(match.id), true) : null,
       owner && !league.endedAt && match.status === 'completed' && !match.voidReason ? action('作废', () => {
         const reason = prompt('请输入公开的作废原因');
         if (reason?.trim()) run(() => mutate('void', { matchId: match.id, reason }));
-      }, true) : null];
+      }, true) : null)];
     })) : muted('尚无比赛。'));
     const personal = panel('个人积分榜', standings(['排名', '玩家', '场数', '手数', '场均分', '总分', '净筹码', '净收益 BB', 'BB/100'],
       league.players.map(player => [player.place || '待达标', personName(player), player.matches, player.hands,
         number(player.average), number(player.points), number(player.profit), number(player.bb), number(player.bb100)])));
-    display(el('h1', {}, league.name),
-      muted(`${mode} · 联赛码 ${league.code} · ${league.endedAt ? '已结算' : '进行中'} · 每场至少 ${league.minHands} 手 · 上榜至少 ${league.minMatches} 场`),
-      activePanel, organizer, league.mode === 'team' ? [teamsView(league), showTeamRank(league)] : null, personal,
-      league.players.length ? el('details', { className: 'club-details' }, el('summary', {}, '联赛六维与称号'),
-        ratingHelp(), grid(league.players.map(dimensionsCard))) : null, history);
+    const expanded = [...view.querySelectorAll('details')].map(details => details.open);
+    display(el('header', { className: 'club-hero' },
+      row(badge(mode), badge(league.endedAt ? '已结算' : '进行中', !league.endedAt)), el('h1', {}, league.name),
+      muted(`房间号 ${league.code} · 每场至少 ${league.minHands} 手 · 上榜至少 ${league.minMatches} 场`)),
+      matchPanel, league.mode === 'team' ? teamsView(league) : null,
+      el('div', { className: 'club-detail-columns' },
+        el('div', {}, league.mode === 'team' ? showTeamRank(league) : null, personal,
+          league.players.length ? el('details', { className: 'club-details' }, el('summary', {}, '联赛六维与称号'),
+            ratingHelp(), grid(league.players.map(dimensionsCard))) : null),
+        el('div', {}, history, owner && !league.endedAt && !active ? panel('主办方操作',
+          action('结算联赛', () => { if (confirm('结算后冻结积分榜和队伍名单，继续吗？')) run(() => mutate('finish')); }, true)) : null)));
+    [...view.querySelectorAll('details')].forEach((details, index) => { if (expanded[index]) details.open = true; });
   }
 
   async function showReport() {
@@ -239,7 +317,7 @@
     display(el('h1', {}, report.name || '牌局赛报'),
       muted(`${date(report.endedAt)} · ${report.hands} 手 · ${deck[rules.deckMode]} · ${blinds[rules.blindMode]} · 大盲 ${rules.bigBlind} · ${rules.allowBuyIn ? '可贷款买入' : '淘汰制'}`),
       report.voidReason ? muted('本场已作废 · ' + report.voidReason) : null,
-      report.leagueCode && identity.leagues ? link('返回所属联赛', leagueUrl(report.leagueCode)) : null,
+      report.leagueCode && identity.leagues ? buttonLink('返回所属联赛', leagueUrl(report.leagueCode), true) : null,
       panel('赛果', net), ratingHelp(), grid(report.players.map(dimensionsCard)));
   }
 
@@ -274,9 +352,11 @@
       document.getElementById('leagueNav').hidden = !identity.leagues;
       if (reportId) await showReport();
       else if (params.has('profile')) await showProfile();
+      else if (identity.leagues && params.has('new')) showCreate();
+      else if (identity.leagues && params.has('join')) showJoin();
       else if (leagueCode && identity.leagues) {
         await showLeague(true);
-        setInterval(() => { if (!document.hidden && !busy) showLeague().catch(() => {}); }, 5000);
+        setInterval(() => { if (!document.hidden && !busy) showLeague().catch(() => {}); }, 2000);
       } else await showList();
     } catch (error) {
       display(el('h1', {}, '页面暂不可用'));

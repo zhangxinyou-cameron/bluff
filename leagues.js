@@ -37,14 +37,20 @@ class Leagues {
       .map(({ code, name, owner, mode, endedAt }) => ({ code, name, owner, mode, endedAt }));
   }
 
-  detail(league, uid) {
+  detail(league, uid, roomForCode) {
     const matches = this.matches(league);
     const format = formats.get(league.format);
     if (!format) throw error(503, '当前联赛规则版本未安装');
     const { players, teams: teamStandings, ledger } = format.aggregate(league, matches);
     return { ...league, members: league.members.map(id => profile(this.accounts.byUid.get(id))),
       teams: league.teams.map(team => ({ ...team, requests: team.captain === uid ? team.requests : team.requests.filter(id => id === uid) })),
-      matches: matches.map(({ players, ...match }) => ({ ...match, participantCount: players?.length || 0 })),
+      matches: matches.map(({ players, ...match }) => {
+        const room = match.status === 'waiting' ? roomForCode(match.code) : null;
+        const seats = room ? [...room.people.values()].filter(person => person.connected && !person.retired)
+          .map(({ uid, name, avatar, id, ready }) => ({ uid, name, avatar, host: id === 0, ready: id === 0 || ready })) : [];
+        return { ...match, participantCount: players?.length || match.participantUids?.length || 0,
+          ...(room ? { seats, capacity: room.maxPlayers } : {}) };
+      }),
       locked: league.members.filter(id => this.locked(league, id)), players, teamStandings, ledger };
   }
 
@@ -55,10 +61,9 @@ class Leagues {
   matchView(id, uid) {
     const match = this.stats.matches.get(id);
     if (!match?.leagueCode || !active(match)) throw error(404, '比赛房已关闭');
-    const league = this.league(match.leagueCode, uid);
     this.admit(match, uid);
     if (match.status === 'running' && !match.participantUids.includes(uid)) throw error(409, '比赛已开始，请等待下一场');
-    return { code: match.code, host: league.owner === uid };
+    return { code: match.code, host: match.owner === uid };
   }
 
   admit(match, uid) {
@@ -98,8 +103,13 @@ class Leagues {
           (mode === 'team' && (!bounded(data.teamCount, 2, 16) || !bounded(data.teamSize, 1, 8)))) {
         throw error(400, '请核对联赛名称、赛制、队伍人数和出场门槛');
       }
-      let code;
-      do { code = String(randomInt(10_000_000, 100_000_000)); } while (this.leagues.has(code));
+      let code = data.code;
+      if (code == null) {
+        do { code = String(randomInt(10_000_000, 100_000_000)); } while (this.leagues.has(code));
+      } else {
+        if (typeof code !== 'string' || !/^[0-9]{8}$/.test(code)) throw error(400, '请输入 8 位数字联赛房间号');
+        if (this.leagues.has(code)) throw error(409, '此联赛房间号已被使用，请换一个号码');
+      }
       const league = { code, name, mode, minHands, minMatches, owner: uid, members: [uid], teams: [],
         teamCount: mode === 'team' ? data.teamCount : 0, teamSize: mode === 'team' ? data.teamSize : 0,
         format: `${points.id}:${points.version}`, createdAt: Date.now(), endedAt: null };
@@ -119,11 +129,11 @@ class Leagues {
     if (league.endedAt) throw error(409, '联赛已结算，只能查看历史');
     const isOwner = league.owner === uid;
     const current = this.matches(league).find(active);
-    if (['open', 'cancel', 'finish', 'void'].includes(data.action) && !isOwner) throw error(403, '仅主办方可以操作');
+    if (['finish', 'void'].includes(data.action) && !isOwner) throw error(403, '仅主办方可以操作');
     if (data.action === 'open') {
       if (current) throw error(409, '请先结束现有比赛');
       if (league.mode === 'team' && (!league.teams.some(team => team.members.includes(uid)) || league.teams.length < 2)) {
-        throw error(409, '请先创建至少两支队伍，主办方也须加入一队');
+        throw error(409, '请先创建至少两支队伍，开房成员也须加入一队');
       }
       let code;
       do { code = String(randomInt(100_000, 1_000_000)); } while (roomExists(code) || this.matchForCode(code));
@@ -133,6 +143,7 @@ class Leagues {
     }
     if (data.action === 'cancel') {
       if (!current) throw error(409, '当前没有进行中的比赛');
+      if (!isOwner && current.owner !== uid) throw error(403, '只有联赛主办方或本场房主可以中止比赛');
       this.stats.save({ ...current, status: 'interrupted', endedAt: Date.now() });
       return { closeCode: current.code };
     }

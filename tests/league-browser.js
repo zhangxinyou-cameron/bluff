@@ -85,17 +85,33 @@ async function main() {
     assert.notEqual(record.credentials.hash, '7');
     assert.equal(record.password, undefined);
 
+    assert.equal(await host.locator('#homeLeagues').evaluate(node => getComputedStyle(node).textDecorationLine), 'none');
     await host.locator('#homeLeagues').click();
+    await host.getByRole('heading', { name: '个人联赛战绩' }).waitFor();
+    assert.equal(await host.locator('.club-dashboard').evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length), 1);
+    await host.getByRole('link', { name: '创建联赛' }).click();
+    await host.waitForURL('**/club.html?new');
     await host.getByLabel('联赛名称').fill('四队联赛');
-    await host.getByLabel('联赛赛制').selectOption('team');
+    await host.getByLabel('联赛房间号').fill('00420125');
+    await host.getByRole('radio', { name: '团队赛' }).check();
     await host.getByLabel('队伍数量').fill('4');
     await host.getByLabel('每队名额').fill('2');
+    await host.getByText('计分门槛', { exact: true }).click();
     await host.getByLabel('每场最低手数').fill('1');
     await host.getByRole('button', { name: '创建联赛' }).click();
     await host.getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
     const code = new URL(host.url()).searchParams.get('league');
+    assert.equal(code, '00420125');
+    await change(host, 'create', code, { name: '重复', mode: 'solo', minHands: 1, minMatches: 1 }, 409);
+    await change(host, 'create', '../x', { name: '错误房号', mode: 'solo', minHands: 1, minMatches: 1 }, 400);
     await api(pages[1], '/api/league?code=' + code, null, 404);
-    for (const page of pages.slice(1)) await change(page, 'join', code);
+    await pages[1].locator('#homeLeagues').click();
+    assert.equal(await pages[1].locator('.club-dashboard').evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length), 2);
+    await pages[1].getByRole('link', { name: '加入联赛' }).click();
+    await pages[1].getByLabel('联赛房间号').fill(code);
+    await pages[1].getByRole('button', { name: '加入联赛' }).click();
+    await pages[1].getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
+    for (const page of pages.slice(2)) await change(page, 'join', code);
     for (const [index, page] of pages.slice(0, 4).entries()) await change(page, 'createTeam', code, { name: '队伍' + (index + 1) });
     let league = await detail(host, code);
     const firstTeam = league.teams[0].id;
@@ -103,23 +119,23 @@ async function main() {
     await change(pages[1], 'approveTeam', code, { teamId: firstTeam, uid: uids[4], accept: true }, 403);
     await change(host, 'approveTeam', code, { teamId: firstTeam, uid: uids[4], accept: true });
 
-    async function enter(page, id) {
+    async function enter(page, id, tableHost = host) {
       await page.goto(base + '/?leagueMatch=' + id);
       await idle(page);
-      if (page !== host) { await page.locator('#readyBtn').click(); await idle(page); }
+      if (page !== tableHost) { await page.locator('#readyBtn').click(); await idle(page); }
     }
-    async function takeAction(group, action) {
-      const room = roomManager.games.get(await host.evaluate(() => roomCode));
+    async function takeAction(group, action, tableHost = host) {
+      const room = roomManager.games.get(await tableHost.evaluate(() => roomCode));
       const before = room.game.revision;
       const seat = room.game.players[room.game.currentPlayerIndex].id;
       const ids = await Promise.all(group.map(page => page.evaluate(() => mySeatId)));
       await group[ids.indexOf(seat)].locator('.action-' + action).click();
-      await host.waitForFunction(revision => g.revision > revision, before);
+      await tableHost.waitForFunction(revision => g.revision > revision, before);
     }
-    async function finish() {
-      await host.locator('#finishSessionBtn').click();
-      await host.getByRole('link', { name: '查看六维赛报' }).waitFor();
-      const url = await host.getByRole('link', { name: '查看六维赛报' }).getAttribute('href');
+    async function finish(tableHost = host) {
+      await tableHost.locator('#finishSessionBtn').click();
+      await tableHost.getByRole('link', { name: '查看六维赛报' }).waitFor();
+      const url = await tableHost.getByRole('link', { name: '查看六维赛报' }).getAttribute('href');
       return new URL(url, base).searchParams.get('report');
     }
 
@@ -148,23 +164,39 @@ async function main() {
     await change(host, 'leaveTeam', code, {}, 409);
     await change(pages[4], 'leaveTeam', code);
 
-    const second = await change(host, 'open', code, { name: '两队标准牌买入' });
-    await api(pages[4], '/api/league?match=' + second.matchId, null, 403);
-    await enter(host, second.matchId);
-    await enter(pages[1], second.matchId);
-    await settings(host, 'allowBuyInSel', 'yes');
-    await settings(host, 'deckModeSel', 'standard');
-    await settings(host, 'bigBlindSel', '50');
-    await host.locator('#startBtn').click();
-    await host.waitForFunction(() => g?.handNumber === 1);
-    await takeAction(pages.slice(0, 2), 'allin');
-    await takeAction(pages.slice(0, 2), 'call');
+    const memberHost = pages[1];
+    await host.goto(base + '/club.html?league=' + code);
+    await memberHost.goto(base + '/club.html?league=' + code);
+    await memberHost.getByLabel('比赛名称（可选）').fill('两队标准牌买入');
+    await memberHost.getByRole('button', { name: '创建比赛房' }).click();
+    await idle(memberHost);
+    const second = (await detail(host, code)).matches.at(-1);
+    assert.equal(second.owner, uids[1]);
+    await api(pages[4], '/api/league?match=' + second.id, null, 403);
+    await change(pages[2], 'cancel', code, {}, 403);
+    await host.getByRole('heading', { name: '两队标准牌买入' }).waitFor();
+    await host.getByRole('link', { name: '加入比赛房' }).click();
+    await idle(host);
+    await pages[2].goto(base + '/club.html?league=' + code);
+    await pages[2].locator('.club-match .club-metric').filter({ hasText: '1 / 2' }).waitFor();
+    assert.equal(await memberHost.locator('#startBtn').isDisabled(), true);
+    await host.locator('#readyBtn').click();
+    await idle(host);
+    await memberHost.locator('#leagueReadyState').filter({ hasText: '全员已准备' }).waitFor();
+    await pages[2].locator('.club-match .club-metric').filter({ hasText: '2 / 2' }).waitFor();
+    await settings(memberHost, 'allowBuyInSel', 'yes');
+    await settings(memberHost, 'deckModeSel', 'standard');
+    await settings(memberHost, 'bigBlindSel', '50');
+    await memberHost.locator('#startBtn').click();
+    await memberHost.waitForFunction(() => g?.handNumber === 1);
+    await takeAction(pages.slice(0, 2), 'allin', memberHost);
+    await takeAction(pages.slice(0, 2), 'call', memberHost);
     for (const page of pages.slice(0, 2)) await page.locator('#voteTwiceBtn').click();
-    await host.waitForFunction(() => g.phase === 'hand_over' && RiverSession.getDiagnostics().serverNow >= RiverSession.getDiagnostics().interactiveAt);
-    const account = await host.evaluate(() => g.players.find(player => player.id === mySeatId));
+    await host.waitForFunction(() => clientGameState.phase === 'hand_over' && RiverSession.getDiagnostics().serverNow >= RiverSession.getDiagnostics().interactiveAt);
+    const account = await host.evaluate(() => clientGameState.players.find(player => player.id === mySeatId));
     await send(host, 'bank', { kind: 'borrow', amount: 500, handNumber: 1, bankVersion: account.bankVersion });
-    assert.equal(await finish(), second.matchId);
-    const result = await api(host, '/api/reports?id=' + second.matchId);
+    assert.equal(await finish(memberHost), second.id);
+    const result = await api(host, '/api/reports?id=' + second.id);
     assert.equal(result.rules.bigBlind, 50);
     assert.equal(result.players.find(player => player.uid === uids[0]).debt, 500);
     assert.equal(result.players.reduce((sum, player) => sum + player.profit, 0), 0);
@@ -179,9 +211,13 @@ async function main() {
     league = await detail(host, code);
     assert.equal(league.teamStandings.filter(team => team.place !== undefined).length, 2);
     assert.equal(league.teamStandings.filter(team => team.mvp.length > 0).length, 2);
+    await host.getByRole('navigation').getByRole('link', { name: '联赛', exact: true }).click();
+    await host.locator('.club-record').filter({ hasText: '两队标准牌买入' }).getByRole('link', { name: '看赛报' }).waitFor();
+    await host.locator('.club-league-card').filter({ hasText: '四队联赛' }).getByRole('link', { name: '进入联赛' }).click();
+    await host.getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
     await api(host, '/api/me', { name: '改名后的玩家' });
     assert.equal((await api(host, '/api/reports')).reports.length, 2);
-    assert.equal((await api(host, '/api/reports?id=' + second.matchId)).players.find(player => player.uid === uids[0]).name, '牌手1');
+    assert.equal((await api(host, '/api/reports?id=' + second.id)).players.find(player => player.uid === uids[0]).name, '牌手1');
     await change(host, 'finish', code);
     await change(host, 'open', code, {}, 409);
 
@@ -190,12 +226,12 @@ async function main() {
     await change(pages[2], 'createTeam', solo.code, { name: '队伍' }, 400);
     const soloMatch = await change(pages[2], 'open', solo.code, { mode: 'team' });
     assert.equal((await detail(host, solo.code)).matches[0].mode, 'solo');
-    await pages[2].goto(base + '/?leagueMatch=' + soloMatch.matchId);
-    await idle(pages[2]);
     await host.goto(base + '/?leagueMatch=' + soloMatch.matchId);
     await idle(host);
     await host.locator('#readyBtn').click();
     await idle(host);
+    await pages[2].goto(base + '/?leagueMatch=' + soloMatch.matchId);
+    await idle(pages[2]);
     await pages[2].locator('#startBtn').click();
     await pages[2].waitForFunction(() => g?.handNumber === 1);
     const soloRoom = roomManager.games.get(await pages[2].evaluate(() => roomCode));
@@ -223,7 +259,7 @@ async function main() {
     assert.equal((await detail(host, solo.code)).matches.find(match => match.id === interrupted.matchId).status, 'interrupted');
     assert.equal(services.stats.matches.size, 4);
     assert.deepEqual(errors, []);
-    console.log('League browser passed: five accounts, three scored matches, four/two teams, fixed formats, debts, double runout, history and reload with plugin toggled.');
+    console.log('League browser passed: responsive dashboard, chosen league code, member-created room, live lobby, ready gate, guest-before-host, three scored matches and saved history.');
   } finally {
     await browser?.close();
     for (const ws of wss.clients) ws.terminate();

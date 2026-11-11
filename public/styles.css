@@ -37,8 +37,17 @@ input::placeholder { color: #819087; }
 .track-now .panel-kicker { grid-column:1 / -1; margin:0; font-size:9px; }
 .track-now strong { font-size:14px; font-weight:500; color:var(--ink); }
 [hidden] { display:none !important; }
-.home-account-links { display:flex; justify-content:center; gap:1.4rem; padding:.5rem 0; }
-.home-account-links a,.final-report-link { color:var(--gold); text-underline-offset:.2em; }
+.home-account-links { display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:10px; }
+.home-account-links .home-btn { display:flex; align-items:center; justify-content:center; gap:.5em; margin:0; text-decoration:none; }
+.final-report-link { color:var(--gold); text-underline-offset:.2em; }
+.league-wait-header { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px; margin-bottom:14px; border:1px solid #536552; background:#162d23; border-radius:8px; text-align:left; }
+.league-wait-header div { min-width:0; display:grid; gap:4px; overflow-wrap:anywhere; }
+.league-wait-header small { color:var(--gold); }
+.league-wait-header a { flex:none; text-decoration:none; }
+.league-ready-state { color:var(--gold); font-size:12px; text-align:center; margin:0; }
+.wait-screen[data-league] .settings-panel { order:1; margin-top:16px; }
+.wait-screen[data-league] .seats { margin-bottom:12px; }
+.wait-screen[data-league] .btn-start:disabled { opacity:.55; cursor:default; }
 .next-hand-panel { margin-top:24px; padding:22px; border:1px solid #526548; border-radius:10px; background:#263a28; }
 .next-hand-status { font-size:12px; color:#c8d4bc; line-height:1.8; margin:0 0 14px; }
 .confirmation-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:18px; }

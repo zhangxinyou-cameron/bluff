@@ -85,9 +85,10 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
     } else {
       const reports = [...stats.matches.values()].filter(report => report.status === 'completed' && report.players.some(row => row.uid === uid))
         .sort((a, b) => b.endedAt - a.endedAt);
-      json(res, { reports: reports.map(({ id, name, endedAt, leagueCode, hands, voidReason, players }) => ({
-        id, name, endedAt, leagueCode, hands, voidReason, profit: players.find(row => row.uid === uid).profit
-      })) });
+      json(res, { reports: reports.map(({ id, name, endedAt, leagueCode, hands, voidReason, players }) => {
+        const player = players.find(row => row.uid === uid);
+        return { id, name, endedAt, leagueCode, hands, voidReason, profit: player.profit, bb: player.bb, playerHands: player.hands };
+      }) });
     }
     return true;
   }
@@ -95,10 +96,11 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
     if (!leagues) throw error(404, '联赛插件未开启');
     if (post) {
       const result = leagues.command(uid, await readBody(req), code => rooms.games.has(code));
-      if (result.closeCode) rooms.closeRoom(result.closeCode, '主办方已中止比赛');
+      if (result.matchId) rooms.openLeagueRoom(stats.matches.get(result.matchId));
+      if (result.closeCode) rooms.closeRoom(result.closeCode, '比赛已中止');
       json(res, result);
     } else if (url.searchParams.has('match')) json(res, leagues.matchView(url.searchParams.get('match'), uid));
-    else if (url.searchParams.has('code')) json(res, leagues.detail(leagues.league(url.searchParams.get('code'), uid), uid));
+    else if (url.searchParams.has('code')) json(res, leagues.detail(leagues.league(url.searchParams.get('code'), uid), uid, code => rooms.games.get(code)));
     else json(res, { leagues: leagues.list(uid) });
     return true;
   }
