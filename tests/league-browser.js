@@ -218,6 +218,7 @@ async function main() {
     await api(host, '/api/me', { name: '改名后的玩家' });
     assert.equal((await api(host, '/api/reports')).reports.length, 2);
     assert.equal((await api(host, '/api/reports?id=' + second.id)).players.find(player => player.uid === uids[0]).name, '牌手1');
+    await change(host, 'delete', code, {}, 409);
     await change(host, 'finish', code);
     await change(host, 'open', code, {}, 409);
 
@@ -258,8 +259,39 @@ async function main() {
     assert.equal((await detail(host, code)).endedAt > 0, true);
     assert.equal((await detail(host, solo.code)).matches.find(match => match.id === interrupted.matchId).status, 'interrupted');
     assert.equal(services.stats.matches.size, 4);
+
+    const oldLeague = base + '/club.html?league=' + code;
+    await memberHost.goto(base);
+    await memberHost.waitForURL('**/account.html');
+    await signIn(memberHost, 2);
+    await memberHost.goto(oldLeague);
+    await memberHost.getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
+    assert.equal(await memberHost.getByRole('button', { name: '删除联赛' }).count(), 0);
+    await change(memberHost, 'delete', code, {}, 403);
+    await host.goto(oldLeague);
+    const remove = host.getByRole('button', { name: '删除联赛' });
+    let confirmation;
+    host.once('dialog', dialog => { confirmation = dialog.message(); return dialog.dismiss(); });
+    await remove.click();
+    assert.match(confirmation, /赛报将永久删除/);
+    assert.ok((await detail(host, code)).endedAt);
+    host.once('dialog', dialog => dialog.accept());
+    await remove.click();
+    await host.waitForURL(base + '/club.html');
+    await host.getByRole('heading', { name: '联赛大厅' }).waitFor();
+    assert.equal(await host.locator('.club-league-card').filter({ hasText: '四队联赛' }).count(), 0);
+    await api(memberHost, '/api/league?code=' + code, null, 404);
+    await api(host, '/api/reports?id=' + first.matchId, null, 404);
+    assert.deepEqual((await api(host, '/api/reports')).reports.map(report => report.id), [soloMatch.matchId]);
+    for (const [folder, id] of [['leagues', code], ['matches', first.matchId], ['matches', second.id]]) {
+      await assert.rejects(fs.access(path.join(root, folder, id + '.json')), { code: 'ENOENT' });
+    }
+    services = configureIdentity(root);
+    assert.equal(services.leagues.leagues.has(code), false);
+    assert.equal(services.stats.matches.has(second.id), false);
+    assert.equal(services.stats.matches.has(soloMatch.matchId), true);
     assert.deepEqual(errors, []);
-    console.log('League browser passed: responsive dashboard, chosen league code, member-created room, live lobby, ready gate, guest-before-host, three scored matches and saved history.');
+    console.log('League browser passed: five accounts, three scored matches, live readiness, restart, and organizer-only archive deletion with confirmation.');
   } finally {
     await browser?.close();
     for (const ws of wss.clients) ws.terminate();

@@ -95,9 +95,15 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
   if (pathname === '/api/league') {
     if (!leagues) throw error(404, '联赛插件未开启');
     if (post) {
-      const result = leagues.command(uid, await readBody(req), code => rooms.games.has(code));
+      const data = await readBody(req);
+      const result = leagues.command(uid, data, code => rooms.games.has(code));
       if (result.matchId) rooms.openLeagueRoom(stats.matches.get(result.matchId));
       if (result.closeCode) rooms.closeRoom(result.closeCode, '比赛已中止');
+      if (result.deleted) {
+        for (const room of rooms.games.values()) {
+          if (room.leagueMatch?.leagueCode === data.code) rooms.closeRoom(room.code, '该联赛档案已删除');
+        }
+      }
       json(res, result);
     } else if (url.searchParams.has('match')) json(res, leagues.matchView(url.searchParams.get('match'), uid));
     else if (url.searchParams.has('code')) json(res, leagues.detail(leagues.league(url.searchParams.get('code'), uid), uid, code => rooms.games.get(code)));

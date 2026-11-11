@@ -20,6 +20,7 @@ button, .club-button {
 }
 button:disabled { opacity: .55; cursor: default; }
 .club-secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+.club-danger { background: #402923; color: #ffd4c5; border-color: #b87563; }
 :focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 label { display: grid; gap: .35rem; color: var(--muted); }
 input, select { min-width: 0; width: 100%; min-height: 44px; padding: .5rem .65rem; color: var(--ink); background: #101e18; border: 1px solid var(--line); border-radius: .45rem; }

@@ -1,7 +1,7 @@
 const { randomInt, randomUUID } = require('node:crypto');
 const path = require('node:path');
 const { error, profile } = require('./accounts');
-const { readRecords, writeRecord } = require('./local-store');
+const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const points = require('./league-points');
 
 const formats = new Map([[`${points.id}:${points.version}`, points]]);
@@ -15,6 +15,9 @@ class Leagues {
     this.leagues = new Map(readRecords(this.directory).map(record => [record.code, record]));
     this.stats = stats;
     this.accounts = accounts;
+    for (const league of this.leagues.values()) {
+      if (league.deletedAt) this.purge(league);
+    }
   }
 
   save(league) {
@@ -26,14 +29,26 @@ class Leagues {
     return [...this.stats.matches.values()].filter(match => match.leagueCode === league.code).sort((a, b) => a.createdAt - b.createdAt);
   }
 
+  purge(marker) {
+    try {
+      this.stats.deleteMatches(marker.matchIds);
+      deleteRecord(this.directory, marker.code);
+      this.leagues.delete(marker.code);
+      return true;
+    } catch (error) {
+      console.error('联赛档案清理失败，将在下次启动时重试:', error.message);
+      return false;
+    }
+  }
+
   league(code, uid) {
     const league = this.leagues.get(code);
-    if (!league?.members.includes(uid)) throw error(404, '联赛不存在或你尚未加入');
+    if (!league || league.deletedAt || !league.members.includes(uid)) throw error(404, '联赛不存在或你尚未加入');
     return league;
   }
 
   list(uid) {
-    return [...this.leagues.values()].filter(league => league.members.includes(uid))
+    return [...this.leagues.values()].filter(league => !league.deletedAt && league.members.includes(uid))
       .map(({ code, name, owner, mode, endedAt }) => ({ code, name, owner, mode, endedAt }));
   }
 
@@ -118,14 +133,25 @@ class Leagues {
     }
     if (data.action === 'join') {
       const league = this.leagues.get(data.code);
-      if (!league) throw error(404, '联赛不存在');
+      if (!league || league.deletedAt) throw error(404, '联赛不存在');
       if (league.members.includes(uid)) return { code: league.code };
       if (league.endedAt) throw error(409, '联赛已结算');
       this.save({ ...league, members: [...league.members, uid] });
       return { code: league.code };
     }
 
-    const league = structuredClone(this.league(data.code, uid));
+    const existing = this.league(data.code, uid);
+    if (data.action === 'delete') {
+      if (existing.owner !== uid) throw error(403, '只有联赛主办方可以删除联赛');
+      const matches = this.matches(existing);
+      if (!existing.endedAt || matches.some(active)) throw error(409, '请先结算联赛，再删除档案');
+      const marker = { code: existing.code, deletedAt: Date.now(), matchIds: matches.map(match => match.id) };
+      // Preserve the deletion across restarts even if a file is temporarily locked.
+      this.save(marker);
+      return { deleted: true, cleanupPending: !this.purge(marker) };
+    }
+
+    const league = structuredClone(existing);
     if (league.endedAt) throw error(409, '联赛已结算，只能查看历史');
     const isOwner = league.owner === uid;
     const current = this.matches(league).find(active);

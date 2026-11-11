@@ -198,7 +198,8 @@ function startTunnel(port) {
 function configureIdentity(root, enableLeagues=true) {
   accounts=new Accounts(root);
   stats=new MatchStats(root);
-  leagues=enableLeagues?new Leagues(root,stats,accounts):null;
+  const leagueStore=new Leagues(root,stats,accounts);
+  leagues=enableLeagues?leagueStore:null;
   Object.assign(roomManager,{accounts,stats,leagues});
   return {accounts,stats,leagues};
 }

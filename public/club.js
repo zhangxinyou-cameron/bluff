@@ -73,7 +73,8 @@
 
   async function mutate(action, fields = {}) {
     const result = await request('/api/league', { action, code: leagueCode, ...fields });
-    if (result.matchId) location.href = tableUrl(result.matchId);
+    if (result.deleted) location.replace(result.cleanupPending ? '/club.html?cleanup=pending' : '/club.html');
+    else if (result.matchId) location.href = tableUrl(result.matchId);
     else if (result.code && !leagueCode) location.href = leagueUrl(result.code);
     else await showLeague(true);
   }
@@ -257,6 +258,19 @@
       }, true) : null));
   }
 
+  function leagueManagement(league) {
+    if (!league.endedAt) return panel('主办方操作', action('结算联赛', () => {
+      if (confirm('结算后冻结积分榜和队伍名单，继续吗？')) run(() => mutate('finish'));
+    }, true));
+    const remove = action('删除联赛', () => {
+      if (confirm(`删除「${league.name}」？联赛、队伍、积分榜和该联赛的比赛赛报将永久删除，并从参赛者的历史记录中移除。`)) {
+        run(() => mutate('delete'));
+      }
+    }, true);
+    remove.classList.add('club-danger');
+    return panel('主办方操作', remove);
+  }
+
   async function showLeague(force = false) {
     const league = await request('/api/league?code=' + encodeURIComponent(leagueCode));
     const signature = JSON.stringify(league);
@@ -301,8 +315,7 @@
         el('div', {}, league.mode === 'team' ? showTeamRank(league) : null, personal,
           league.players.length ? el('details', { className: 'club-details' }, el('summary', {}, '联赛六维与称号'),
             ratingHelp(), grid(league.players.map(dimensionsCard))) : null),
-        el('div', {}, history, owner && !league.endedAt && !active ? panel('主办方操作',
-          action('结算联赛', () => { if (confirm('结算后冻结积分榜和队伍名单，继续吗？')) run(() => mutate('finish')); }, true)) : null)));
+        el('div', {}, history, owner && !active ? leagueManagement(league) : null)));
     [...view.querySelectorAll('details')].forEach((details, index) => { if (expanded[index]) details.open = true; });
   }
 
@@ -356,8 +369,18 @@
       else if (identity.leagues && params.has('join')) showJoin();
       else if (leagueCode && identity.leagues) {
         await showLeague(true);
-        setInterval(() => { if (!document.hidden && !busy) showLeague().catch(() => {}); }, 2000);
-      } else await showList();
+        setInterval(() => {
+          if (!document.hidden && !busy) showLeague().catch(error => {
+            if (error.status === 404) location.replace('/club.html');
+          });
+        }, 2000);
+      } else {
+        await showList();
+        if (params.get('cleanup') === 'pending') {
+          tell('联赛已移除。部分文件暂时无法清理，服务器下次启动时会重试。');
+          history.replaceState(null, '', '/club.html');
+        }
+      }
     } catch (error) {
       display(el('h1', {}, '页面暂不可用'));
       if (error.status === 401) location.replace('/account.html');

@@ -20,4 +20,8 @@ function writeRecord(directory, id, record) {
   }
 }
 
-module.exports = { readRecords, writeRecord };
+function deleteRecord(directory, id) {
+  fs.rmSync(path.join(directory, id + '.json'), { force: true });
+}
+
+module.exports = { readRecords, writeRecord, deleteRecord };

@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const E = require('./public/poker-engine');
 const AI = require('./poker-ai');
-const { readRecords, writeRecord } = require('./local-store');
+const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
 const dimensions = ['luck', 'strategy', 'calculation', 'courage', 'attack', 'stability'];
@@ -77,6 +77,11 @@ class MatchStats {
     writeRecord(this.directory, match.id, match);
     this.matches.set(match.id, match);
     return match;
+  }
+
+  deleteMatches(ids) {
+    for (const id of ids) this.matches.delete(id);
+    for (const id of ids) deleteRecord(this.directory, id);
   }
 
   open(room, humans) {
