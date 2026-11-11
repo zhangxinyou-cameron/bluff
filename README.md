@@ -27,13 +27,20 @@ npm ci --omit=dev
 npm start
 ```
 
-也可双击 `start.bat`；本机需在 PATH 中安装 Node.js，或在项目目录放置便携版 `node.exe`。每次启动都设置本次网站访问密码，之后打开终端显示的本地地址。网页、静态资源和 WebSocket 均需验证密码。
+也可双击 `start.bat`，本机需在 PATH 中安装 Node.js，或在项目目录放置便携版 `node.exe`。每次启动都设置本次网站访问密码。通过访问密码后，用数字账号和数字密码注册或登录，随后进入牌桌大厅。游戏网页、游戏资源和 WebSocket 都要求通过两层验证。
 
 公网访问使用 Cloudflare Tunnel：Windows 将官方 `cloudflared.exe` 放在实际启动的项目根目录（例如 `E:\bluff\cloudflared.exe`），启动时会自动创建临时公网地址。也可将工具加入系统 PATH，或设置 `CLOUDFLARED_PATH` 为工具完整路径；指定路径优先，其次项目目录，再次 PATH。缺少工具时，终端会显示需要放置的具体目录，本地服务仍能运行。
 
 从旧便携目录迁移时，需要一并复制 `cloudflared.exe` 到新目录；例如本机可将 `E:\update\cloudflared.exe` 复制至 `E:\bluff\cloudflared.exe`。工具不随 Git 上传或下载。将终端提供的 HTTPS 地址、房间号和本次密码告知朋友。临时地址会变化；服务器重启不保留内存中的房间。
 
 仓库不包含 Node.js、Cloudflare 可执行文件、`node_modules`、运行数据和旧打包文件。现有便携目录中的这些本地文件可以继续使用。
+
+## 个人账号与联赛
+
+- 个人档案里可以修改昵称、头像和数字密码。UID 关联各场战绩，已归档赛报保留参赛时的昵称和头像。忘记个人密码时，停服后在本机运行 `node tools/reset-account.js 数字账号`，按提示输入两次新密码。
+- 从首页「联赛」创建或输入 8 位联赛码加入。主办方在创建时选定个人赛或团队赛，整届沿用。每场可单独设置盲注、牌制和贷款。团队场要求各队上场人数相同，玩家首次代表队伍获得计分赛果后锁队。
+- 联赛按场均积分排序，默认一场至少 5 手才计分，至少 2 场才进入正式榜。队伍交锋、MVP、净收益和六维报告在联赛页查看。
+- 启动菜单用 K 沿用、O 开启、F 关闭联赛，也可用 `npm start -- --leagues=on` 或 `npm start -- --leagues=off`。账号、赛报、联赛和选项位于本地 `data/`。迁移服务器时在停服后复制该目录即可带走历史。重启时未结算的牌桌会中断，已结算成绩保留。
 
 ## 玩法与界面
 
@@ -58,6 +65,7 @@ npm run test:experience
 npm run test:table
 npm run test:ui
 npm run test:ai
+npm run test:league
 ```
 
 浏览器回归使用 Playwright 和本机 Chrome，主要脚本默认 Chrome 位于 `C:/Program Files/Google/Chrome/Application/chrome.exe`；其他安装位置请调整脚本中的 `executablePath`。测试在随机本地端口使用独立临时密码，不启动生产公网隧道。

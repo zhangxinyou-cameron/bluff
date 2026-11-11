@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · THE RIVER</title>
+  <link rel="stylesheet" href="/club.css">
+  <script src="/account-client.js" defer></script>
+</head>
+<body class="identity-page">
+  <main class="identity-card">
+    <div class="club-brand">♠ THE RIVER</div>
+    <h1 id="accountHeading">登录牌桌</h1>
+    <form id="accountForm">
+      <label>数字账号<input name="number" inputmode="numeric" pattern="[0-9]+" maxlength="128" autocomplete="username" required autofocus></label>
+      <label>数字密码<input name="password" type="password" inputmode="numeric" pattern="[0-9]+" maxlength="128" autocomplete="current-password" required></label>
+      <label id="confirmLabel" hidden>确认密码<input name="confirmation" type="password" inputmode="numeric" pattern="[0-9]+" maxlength="128" autocomplete="new-password" disabled></label>
+      <button id="accountSubmit">登录</button>
+    </form>
+    <p id="accountMessage" role="status"></p>
+    <button class="club-secondary" id="accountToggle" type="button">注册新账号</button>
+  </main>
+</body>
+</html>

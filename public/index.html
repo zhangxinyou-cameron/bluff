@@ -86,12 +86,13 @@
     <div class="title">德州扑克</div>
     <div class="subtitle">Texas Hold’em · 属于你们的私人牌局</div>
     <label class="field-label" for="nameInput">牌桌上的称呼</label>
-    <input class="room-code-input" id="nameInput" placeholder="输入你的昵称" maxlength="8" autocomplete="nickname"/>
+    <input class="room-code-input" id="nameInput" placeholder="输入你的昵称" maxlength="32" autocomplete="nickname"/>
     <button id="homeAvatarBtn" class="sound-button home-avatar-button" onclick="RiverTable.openAvatar()" aria-haspopup="dialog">选择头像</button>
     <input class="room-code-input" id="roomCodeInput" placeholder="输入6位房间号" aria-label="6位房间号" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" style="display:none"/>
     <button class="home-btn btn-create" id="createBtn">创建房间 <span aria-hidden="true">↗</span></button>
     <button class="home-btn btn-join" id="joinBtn">加入朋友的牌局</button>
     <button class="home-btn btn-create" id="confirmJoinBtn" style="display:none">确认加入</button>
+    <div class="home-account-links" id="homeAccountLinks" hidden><a id="homeProfile" href="/club.html?profile">个人档案</a><a id="homeLeagues" href="/club.html" hidden>联赛</a></div>
     <p class="panel-footnote">2—8 人同桌 · ≤4 人短牌 · ≥5 人标准德扑</p>
     </section>
   </div>
@@ -221,6 +222,7 @@
 </div>
 <footer class="site-footer"><span>THE RIVER <span class="footer-suits">♠ ♥ ♣ ♦</span></span><span>放慢节奏，享受每一手好牌。 · 仅供好友娱乐</span></footer>
 <script src="/audio.js" defer></script>
+<script src="/account-client.js" defer></script>
 <script src="/session-client.js" defer></script>
 <script src="/table-ui.js" defer></script>
 <script src="/poker-engine.js"></script>
@@ -803,7 +805,7 @@ function updateSessionTools(state) {
   const p=state.players.find(player=>player.id===mySeatId);
   document.getElementById('sessionStatus').textContent=state.endRequested?(state.phase==='tournament_over'?'整场已结算':'房主已申请结算，打完当前手后公布排名'):p?`筹码 ${p.chips} · 欠款 ${p.bankDebt} · 净筹码 ${p.chips-p.bankDebt}`:'';
   const finish=document.getElementById('finishSessionBtn');
-  finish.hidden=!isHost||!state.allowBuyIn;finish.disabled=!!state.endRequested||!wsConnected;
+  finish.hidden=!isHost||(!state.allowBuyIn&&!state.allowHostEnd);finish.disabled=!!state.endRequested||state.phase==='tournament_over'||!wsConnected;
   finish.textContent=state.endRequested?'已申请结算':'结算整局';
   finish.title='若本手仍在进行，会打完本手再结算';
   if(document.getElementById('bankDialog').open)renderBank(state);

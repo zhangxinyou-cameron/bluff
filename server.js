@@ -7,6 +7,11 @@ const { WebSocketServer } = require('ws');
 const { AccessControl, promptStartupPassword } = require('./access');
 const { RoomManager } = require('./room-manager');
 const { findCloudflared } = require('./tunnel');
+const { Accounts } = require('./accounts');
+const { MatchStats } = require('./match-stats');
+const { Leagues } = require('./leagues');
+const { identityHttp, json } = require('./identity-http');
+const { readRecords, writeRecord } = require('./local-store');
 
 const PORT = 3000;
 
@@ -25,6 +30,7 @@ const MIME = {
 };
 
 const access = new AccessControl();
+let accounts, stats, leagues;
 const publicRoot = path.resolve(__dirname, 'public');
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -37,8 +43,14 @@ const server = http.createServer(async (req, res) => {
     res.end('访问验证暂时不可用');
     return;
   }
-  if(req.url.split('?')[0]==='/api/session') {
-    res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({authenticated:true}));return;
+  try {
+    if(accounts&&await identityHttp(req,res,access,accounts,stats,leagues,roomManager,revokeAccounts))return;
+  } catch(error) {
+    if(!error.status)console.error('Account or league request:',error.message);
+    json(res,{message:error.status?error.message:'本地数据暂时无法访问，请稍后再试'},error.status||500);return;
+  }
+  if(['/api/session','/api/me'].includes(req.url.split('?')[0])) {
+    json(res,{authenticated:true,profile:null,leagues:false});return;
   }
   let pathname;
   try { pathname = decodeURIComponent(req.url.split('?')[0]); }
@@ -61,17 +73,28 @@ const server = http.createServer(async (req, res) => {
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 65536 });
+function revokeAccounts(predicate) {
+  if(!accounts)return;
+  const tokens=new Set();
+  for(const [token,session] of accounts.sessions)if(predicate(token,session)){accounts.sessions.delete(token);tokens.add(token);}
+  for(const ws of wss.clients)if(tokens.has(ws.accountToken)){ws.accountRevoked=true;ws.close(4004,'Account ended');}
+}
 access.onSessionRevoked = key => {
+  revokeAccounts((_,session)=>session.gateKey===key);
   for (const ws of wss.clients) if (ws.accessKey === key) ws.close(1008, 'Access ended');
 };
 const sessionCheck = setInterval(() => {
   for (const ws of wss.clients) {
-    if ((access.sessions.get(ws.accessKey) || 0) <= Date.now()) ws.close(1008, 'Access expired');
+    if ((access.sessions.get(ws.accessKey) || 0) <= Date.now() ||
+        accounts&&(accounts.sessions.get(ws.accountToken)?.expires||0)<=Date.now()) {
+      ws.accountRevoked=true;ws.close(4004,'Session expired');
+    }
   }
 }, 60000);
 sessionCheck.unref();
 server.on('upgrade', (req, socket, head) => {
-  if (!access.authenticated(req)) {
+  const session=accounts?.session(req,access.token(req));
+  if (!access.authenticated(req)||(accounts&&!session)) {
     socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
     socket.destroy();
     return;
@@ -81,23 +104,26 @@ server.on('upgrade', (req, socket, head) => {
     try { if (new URL(req.headers.origin).host !== req.headers.host) { socket.destroy(); return; } }
     catch (_) { socket.destroy(); return; }
   }
-  wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+  wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req, session));
 });
 const rooms = new Map();
 const roomManager = new RoomManager(rooms);
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws, req, session) => {
   ws.accessKey=access.token(req);ws.roomCode=null;ws.seatId=-1;ws.isAlive=true;
+  if(session){ws.uid=session.uid;ws.accountToken=session.token;}
   ws.on('pong',()=>{ws.isAlive=true;});
   ws.on('error',()=>{});
   ws.on('message',(message,isBinary)=>{
     try {
-      if(isBinary)return;
+      if(isBinary||ws.accountRevoked)return;
+      if((access.sessions.get(ws.accessKey)||0)<=Date.now()||
+         accounts&&(accounts.sessions.get(ws.accountToken)?.expires||0)<=Date.now()){ws.close(4004,'Session expired');return;}
       let data;try{data=JSON.parse(message.toString());}catch(_){return;}
       if(!data||typeof data!=='object'||Array.isArray(data))return;
       roomManager.handle(ws,data);
     } catch(error) {console.error('Connection command:',error.message);}
   });
-  ws.on('close',code=>{if(!ws.superseded)roomManager.leave(ws,code===1008);});
+  ws.on('close',()=>{if(!ws.superseded)roomManager.leave(ws);});
 });
 const heartbeat=setInterval(()=>{
   for(const ws of wss.clients){if(!ws.isAlive){ws.terminate();continue;}ws.isAlive=false;ws.ping();}
@@ -168,8 +194,23 @@ function startTunnel() {
   process.on('SIGINT', () => { try { proc.kill(); } catch(e){} process.exit(0); });
 }
 
+function configureIdentity(root, enableLeagues=true) {
+  accounts=new Accounts(root);
+  stats=new MatchStats(root);
+  leagues=enableLeagues?new Leagues(root,stats,accounts):null;
+  Object.assign(roomManager,{accounts,stats,leagues});
+  return {accounts,stats,leagues};
+}
+
 async function startServer() {
   access.configure(await promptStartupPassword());
+  const dataRoot=path.join(__dirname,'data');
+  const configDir=path.join(dataRoot,'settings');
+  const selected=process.argv.find(arg=>/^--leagues=(on|off)$/.test(arg));
+  const enableLeagues=selected?selected.endsWith('=on'):(readRecords(configDir)[0]?.leagues??true);
+  if(selected)writeRecord(configDir,'server',{leagues:enableLeagues});
+  configureIdentity(dataRoot,enableLeagues);
+  console.log('  联赛插件：'+(enableLeagues?'已开启':'已关闭'));
   server.listen(PORT, '0.0.0.0', () => {
   const ips = getLocalIPs();
   console.log('');
@@ -199,4 +240,4 @@ if (require.main === module) startServer().catch(error => {
   console.error('服务器未启动：' + error.message);
   process.exitCode = 1;
 });
-module.exports = { server, wss, access, roomManager, rooms };
+module.exports = { server, wss, access, roomManager, rooms, configureIdentity };

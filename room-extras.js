@@ -12,12 +12,15 @@ module.exports=function install(RoomManager){
     },
     extraCommand(room,person,data){
       const g=room.game,me=g?.players.find(p=>p.id===person.id);
+      if(room.leagueMatch?.mode==='team'&&['peekThreshold','peekRequest','peekReply'].includes(data.type))return fail('计分团队场不开放定向看牌');
+      if(room.leagueMatch&&g&&['deckMode','blindMode'].includes(data.type))return fail('联赛比赛开局后锁定牌制和盲注');
       if(data.type==='peekThreshold'){
         if(data.threshold!==null&&(!Number.isSafeInteger(data.threshold)||data.threshold<0))return fail('门槛须为非负整数，或关闭自动同意');
         person.peekThreshold=data.threshold;return{ok:true,message:data.threshold===null?'已改为手动确认看牌申请':`看牌门槛已公开为 ${data.threshold} 筹码，后续达标申请自动同意`};
       }
       if(data.type==='avatar'){
         if(!Avatars.valid(data.avatar))return fail('请选择有效的头像');
+        if(person.uid)this.accounts.update(person.uid,{avatar:data.avatar});
         person.avatar=data.avatar;if(me)me.avatar=data.avatar;return{ok:true,message:'头像已更新'};
       }
       if(data.type==='closeRoom'){
@@ -114,6 +117,7 @@ module.exports=function install(RoomManager){
     },
     prepareVote(room){
       const vote=room.game.runoutVote;if(!vote||vote.expiresAt)return;
+      this.stats?.lock(room);
       vote.expiresAt=Date.now()+(this.timing.vote??20000);
       vote.yesIds=vote.eligibleIds.filter(id=>room.game.players.find(p=>p.id===id)?.isAI);
       this.event(room,'system','下注已结束，等待所有争池玩家协商：发两次需全员同意，拒绝或超时则发一次');

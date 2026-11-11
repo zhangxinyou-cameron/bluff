@@ -54,7 +54,9 @@
     el('sessionToolbar').hidden=false;
     for(const id of ['tableDeckMode','deckModeSel']){el(id).value=value.settings.deckMode||'auto';el(id).disabled=!isHost||!!game&&!['hand_over','tournament_over'].includes(game.phase)||!wsConnected;}
     for(const id of ['tableBlindMode','blindModeSel']){el(id).value=value.settings.blindMode||'auto';el(id).disabled=!isHost||!!game&&game.phase!=='hand_over'||!wsConnected;}
-    el('managePlayersBtn').hidden=!isHost;el('closeRoomBtn').hidden=!isHost;el('bankBtn').hidden=!game?.allowBuyIn;el('finishSessionBtn').hidden=!isHost||!game?.allowBuyIn;
+    if(value.league&&game)for(const id of ['tableDeckMode','tableBlindMode'])el(id).disabled=true;
+    el('peekSettingsBtn').hidden=value.league?.mode==='team';
+    el('managePlayersBtn').hidden=!isHost;el('closeRoomBtn').hidden=!isHost;el('bankBtn').hidden=!game?.allowBuyIn;el('finishSessionBtn').hidden=!isHost||(!game?.allowBuyIn&&!game?.allowHostEnd);
     if(!game){el('sessionMode').textContent='牌桌设置';el('sessionStatus').textContent='暂时离桌保留原位30分钟 · 同一浏览器重新入房恢复';render(value,false);}
     el('playWorkspace').classList.toggle('is-playing',next);document.body.classList.toggle('in-game',next);
     if(next!==playing){playing=next;if(next){el('historyFilter').value='chat';requestAnimationFrame(()=>el('playWorkspace').scrollIntoView({block:'start',behavior:'instant'}));}else if(game)requestAnimationFrame(()=>el('resultScreen').scrollIntoView({block:'start',behavior:'instant'}));}
@@ -97,7 +99,7 @@
     el('socialPeekThreshold').textContent=selected&&!selected.isAI?'对方看牌门槛：'+thresholdText(selected.peekThreshold):'';
     el('socialAudience').textContent=socialTab==='phrases'?'语言包会发送给整桌朋友':socialTab==='peek'?'由这位玩家决定是否向你亮牌':'礼物将送到所选玩家座位';
     const request=data?.peekRequests?.find(r=>r.from===mySeatId&&r.to===target?.id);
-    const can=!!game&&PokerEngine.canRequestPeek(me)&&game.phase!=='tournament_over'&&!!target&&!target.isAI&&!target.disconnected&&target.connected!==false&&!request;
+    const can=data?.league?.mode!=='team'&&!!game&&PokerEngine.canRequestPeek(me)&&game.phase!=='tournament_over'&&!!target&&!target.isAI&&!target.disconnected&&target.connected!==false&&!request;
     el('requestPeekBtn').disabled=!can||!wsConnected||busy;
     el('peekHelp').textContent=request?request.status==='pending'?'申请已发送，等待对方答复。':'本手已向这位玩家申请过，可查看上方结果。':can?me.chips===0?'观战也可申请看牌，无筹码时小费填0；需对方同意。':'小费于本手结算后转账；对方拒绝或申请过期均不扣款。':'本手弃牌或无筹码观战时，可向在线真人申请看牌。';
     for(const button of el('giftButtons').querySelectorAll('button'))button.disabled=!selected||!wsConnected||busy;
@@ -155,7 +157,13 @@
   el('peekInbox').addEventListener('click',e=>{const button=e.target.closest('[data-peek]');if(button)replyPeek(button.dataset.accept==='true',button.dataset.peek);});
   el('peekConsentAccept').onclick=()=>replyPeek(true);el('peekConsentDecline').onclick=()=>replyPeek(false);
   el('peekConsentDialog').addEventListener('cancel',e=>{e.preventDefault();replyPeek(false);});
-  el('avatarChoices').addEventListener('click',e=>{const button=e.target.closest('button[data-avatar]');if(!button||button.disabled)return;const id=button.dataset.avatar;if(data&&wsConnected){cmd('avatar',{avatar:id});}else if(!data){RiverAvatars.save(id);avatarUI();el('avatarDialog').close();}});
+  el('avatarChoices').addEventListener('click',async e=>{
+    const button=e.target.closest('button[data-avatar]');if(!button||button.disabled)return;
+    const id=button.dataset.avatar;
+    if(data&&wsConnected){cmd('avatar',{avatar:id});return;}
+    if(!data)try{await window.RiverSession.saveHomeAvatar(id);avatarUI();el('avatarDialog').close();}
+    catch(error){toast(error.message,false);}
+  });
   document.querySelector('.social-tabs').addEventListener('click',e=>{const button=e.target.closest('[data-social-tab]');if(button)setTab(button.dataset.socialTab);});
   document.querySelector('.social-tabs').addEventListener('keydown',e=>{const tabs=['gifts','phrases','peek'],index=tabs.indexOf(e.target.closest('[data-social-tab]')?.dataset.socialTab||socialTab);if(['ArrowRight','ArrowLeft','Home','End'].includes(e.key)){e.preventDefault();setTab(e.key==='Home'?tabs[0]:e.key==='End'?tabs[2]:tabs[(index+(e.key==='ArrowRight'?1:2))%3],true);}});
   el('managePlayersBtn').onclick=()=>open(undefined,'manage');

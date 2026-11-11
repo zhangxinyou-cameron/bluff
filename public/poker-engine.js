@@ -255,7 +255,7 @@ function cmpHand(a,b) {
       p.currentBet=Math.max(0,p.currentBet-refund);
     }
     const levels=[...new Set(g.players.map(p=>p.totalBet).filter(Boolean))].sort((a,b)=>a-b);
-    const won=new Set(); g.pots=[];
+    const won=new Set(); g.pots=[]; g.potEligibility=[];
     const layers=[];
     let previous=0;
     for (const level of levels) {
@@ -285,6 +285,7 @@ function cmpHand(a,b) {
         for(const award of awards){g.players.find(p=>p.id===award.seatId).chips+=award.amount;if(award.amount>0){won.add(award.seatId);combined.set(award.seatId,(combined.get(award.seatId)||0)+award.amount);}}
         runs.push({index,amount:portion,winners:winners.map(p=>p.id),awards});
       }
+      g.potEligibility.push(eligible.map(p=>p.id));
       g.pots.push({amount,winners:[...combined.keys()],awards:[...combined].map(([seatId,amount])=>({seatId,amount})),...(boards.length>1?{boards:runs}:{})});
     }
     for(const p of g.players) {
@@ -295,7 +296,7 @@ function cmpHand(a,b) {
     }
     g.winners=[...won];
     g.pot=0; g.phase='hand_over'; g.currentPlayerIndex=-1; g.nextHandReady=[];
-    if(g.allowBuyIn&&g.endRequested)finalizeSession(g);
+    if(g.endRequested)finalizeSession(g);
   }
   function disconnect(g,seatId) {
     const p=g.players.find(p=>p.id===seatId);
@@ -362,7 +363,7 @@ function cmpHand(a,b) {
     g.phase='tournament_over';g.currentPlayerIndex=-1;g.nextHandReady=[];
   }
   function requestSessionEnd(g,seatId) {
-    if(!g||!g.allowBuyIn||seatId!==g.hostSeatId||g.phase==='tournament_over')return {ok:false,message:'只有房主可以结算买入场'};
+    if(!g||(!g.allowBuyIn&&!g.allowHostEnd)||seatId!==g.hostSeatId||g.phase==='tournament_over')return {ok:false,message:'只有房主可以提前结算买入场或联赛场'};
     if(g.endRequested)return {ok:true,duplicate:true};
     g.endRequested=true;g.revision++;
     if(!betting(g)&&g.phase!=='runout_vote')finalizeSession(g);

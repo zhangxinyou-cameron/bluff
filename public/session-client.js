@@ -2,6 +2,7 @@
 (() => {
   'use strict';
   const node=id=>document.getElementById(id);
+  let identity=null;
   let entry=null,lastSnapshot=null,lastVersion=-1,clockOffset=0,lastReceived=0,lastPing=0,retry=0,reconnectTimer=null,watchdog=null,renderTimer=null;
   let intentional=false,stopped=false,sequence=0,eventId=0,paintKey='',animationKey='',pending=null,historyLimit=100;
   const events=[],seen=new Set(),storageKey='river_room_resume_v2';
@@ -131,7 +132,13 @@
       node('dealProgress').style.width=`${Math.round(progress*100)}%`;
     }else{node('dealingStage').hidden=true;animationKey='';}
     if((state.phase==='tournament_over'||state.phase==='hand_over')&&remaining<=0){
-      if(state.phase==='tournament_over')renderFinalRanking(state);else showResultScreen(state);
+      if(state.phase==='tournament_over'){
+        renderFinalRanking(state);
+        const result=document.querySelector('.result-card');
+        if(data.reportId){
+          const link=document.createElement('a');link.href='/club.html?report='+encodeURIComponent(data.reportId);link.className='final-report-link';link.textContent='查看六维赛报';result.append(link);
+        }else if(data.reportPending){const note=document.createElement('p');note.textContent='赛报暂未保存，服务器正在重试';result.append(note);}
+      }else showResultScreen(state);
       node('nextHandBtn')&&(node('nextHandBtn').disabled=!!pending||!wsConnected||(state.nextHandReady||[]).includes(mySeatId));
     }else{showGameScreen();renderGame(view);}
     const blindRule=state.blindRule||(state.variant==='short'?'ante':'standard'),blindLabel=blindRule==='ante'?'全员底注＋庄家盲注':blindRule==='position'?'下家1倍 / 下下家半倍':'标准大小盲';
@@ -218,13 +225,21 @@
       if(ws!==socket)return;wsConnected=false;
       if(intentional||stopped)return;
       if(event.code===4001){stopped=true;status('该席位已在另一页面恢复，请关闭本页','error');return;}
+      if(event.code===4004){stopped=true;status('登录已过期，请重新登录后恢复席位','expired');return;}
       status('连接中断，席位已保留，正在自动重连…');paint(true);
       reconnectTimer=setTimeout(connect,Math.min(8000,600*2**Math.min(retry++,4)));
       if(retry===3&&typeof fetch==='function')fetch('/api/session').then(result=>{if(result.status===401){stopped=true;status('登录已过期，请重新登录后恢复席位','expired');}}).catch(()=>{});
     };
     clearTimeout(connectionTimer);connectionTimer=setTimeout(()=>{if(ws===socket&&!wsConnected){socket.close();}},12000);
   }
-  function begin(code,host){
+  async function begin(code,host){
+    if(identity?.profile){
+      const name=node('nameInput').value.trim();
+      if(name&&name!==identity.profile.name){
+        try{identity=await window.RiverAccount.request('/api/me',{name});myName=identity.profile.name;}
+        catch(error){status(error.message,'error');return;}
+      }
+    }
     intentional=true;if(ws){ws.onclose=null;ws.close();}
     g=null;clientGameState=null;lastSnapshot=null;lastVersion=-1;events.length=0;seen.clear();eventId=0;pending=null;sequence=0;stopped=false;retry=0;
     const saved=safeRead(),known=readRegistry()[code];entry=saved?.roomCode===code?saved:known||{roomCode:code,isHost:host};sequence=entry.commandSeq||0;
@@ -272,11 +287,34 @@
   },1000);
   renderTimer=setInterval(()=>{if(!document.hidden)paint();},180);
   const previousLoad=window.onload;
-  window.onload=()=>{
+  window.onload=async()=>{
+    try{
+      identity=await window.RiverAccount.request('/api/me');
+      if(identity.profile){
+        const previousUid=localStorage.getItem('river_profile_uid');
+        if(previousUid&&previousUid!==identity.profile.uid){sessionStorage.removeItem(storageKey);localStorage.removeItem(registryKey);}
+        localStorage.setItem('river_profile_uid',identity.profile.uid);
+        localStorage.setItem('starstone_name',identity.profile.name);
+        myName=identity.profile.name;node('nameInput').value=myName;window.RiverAvatars.save(identity.profile.avatar);
+        node('homeAccountLinks').hidden=false;node('homeLeagues').hidden=!identity.leagues;
+      }
+      const leagueMatch=new URLSearchParams(location.search).get('leagueMatch');
+      if(leagueMatch){
+        const table=await window.RiverAccount.request('/api/league?match='+encodeURIComponent(leagueMatch));
+        history.replaceState(null,'',location.pathname);begin(table.code,table.host);return;
+      }
+    }catch(error){
+      if(error.status===401){location.replace('/account.html');return;}
+      status(error.message,'error');
+    }
     const saved=safeRead(),match=location.hash.match(/room=(\d{6})/);
     if(saved&&(!match||match[1]===saved.roomCode)){const name=localStorage.getItem('starstone_name');if(name)myName=name;node('nameInput').value=myName;entry=saved;sequence=saved.commandSeq||0;roomCode=saved.roomCode;isHost=saved.isHost;showWaitScreen();connect();}
     else if(previousLoad)previousLoad();
   };
-  window.RiverSession={sync,reconnect:()=>{lastReceived=0;connect();},leave,clearResume:()=>{entry=null;save();},getDiagnostics:()=>({connected:wsConnected,retry,version:lastVersion,eventId,pending:pending?.type||null,interactiveAt:lastSnapshot?.interactiveAt,serverNow:now()}),command};
+  async function saveHomeAvatar(avatar){
+    if(identity?.profile)identity=await window.RiverAccount.request('/api/me',{avatar});
+    window.RiverAvatars.save(avatar);
+  }
+  window.RiverSession={sync,reconnect:()=>{lastReceived=0;connect();},leave,clearResume:()=>{entry=null;save();},getDiagnostics:()=>({connected:wsConnected,retry,version:lastVersion,eventId,pending:pending?.type||null,interactiveAt:lastSnapshot?.interactiveAt,serverNow:now()}),command,saveHomeAvatar};
   // Mobile bfcache freezes timers; keep them registered so pageshow can resume them.
 })();

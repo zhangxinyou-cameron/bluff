@@ -12,7 +12,8 @@
     "test:experience": "node tests/experience-browser.js",
     "test:table": "node tests/table-features-browser.js",
     "test:ui": "node tests/ui-check.js",
-    "test:ai": "node tests/ai-simulation.js"
+    "test:ai": "node tests/ai-simulation.js",
+    "test:league": "node tests/league-browser.js"
   },
   "dependencies": { "ws": "8.22.0" },
   "devDependencies": { "playwright": "1.62.1" }

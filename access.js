@@ -140,4 +140,4 @@ class AccessControl {
   }
 }
 
-module.exports = { AccessControl, passwordRecord, promptStartupPassword };
+module.exports = { AccessControl, passwordRecord, promptStartupPassword, hiddenQuestion };
