@@ -1,4 +1,5 @@
 const { error, profile } = require('./accounts');
+const { readFile } = require('node:fs/promises');
 const { loginDestination } = require('./access');
 
 function json(res, data, status = 200) {
@@ -93,6 +94,17 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
         return { id, name, endedAt, leagueCode, hands, voidReason, profit: player.profit, bb: player.bb, playerHands: player.hands };
       }) });
     }
+    return true;
+  }
+  if (pathname === '/api/team-flags' && req.method === 'GET') {
+    const flag = leagues?.flagImage(url.searchParams.get('id'));
+    if (!flag) throw error(404, '队旗图片不存在');
+    const data = await readFile(flag.file).catch(cause => {
+      if (cause.code === 'ENOENT') throw error(404, '队旗图片不存在');
+      throw cause;
+    });
+    res.writeHead(200, { 'Content-Type': flag.type, 'Cache-Control': 'no-store' });
+    res.end(data);
     return true;
   }
   if (pathname === '/api/league') {

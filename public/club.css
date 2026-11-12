@@ -58,7 +58,7 @@ small, .club-muted { color: var(--muted); }
 .club-dashboard { grid-template-areas: "stats actions"; }
 .club-dashboard-stats { grid-area: stats; min-width: 0; }
 .club-dashboard-actions { grid-area: actions; min-width: 0; }
-.club-dashboard-stats > :first-child { margin-top: 0; }
+.club-dashboard-overview > .club-panel { margin-top: 0; }
 .club-detail-columns { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
 .club-detail-columns > div { min-width: 0; }
 .club-launch-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
@@ -120,11 +120,116 @@ small, .club-muted { color: var(--muted); }
 .club-dimensions { display: grid; grid-template-columns: repeat(2, 1fr); gap: .55rem; }
 .club-dimensions div { display: grid; gap: .14rem; }
 .club-dimensions strong { color: var(--gold); }
+.club-league-heading { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: .9rem clamp(1rem, 3vw, 1.5rem); gap: .45rem; }
+.club-league-heading h1 { grid-area: 1 / 1; }
+.club-league-heading > .club-badge { grid-area: 1 / 2; justify-self: end; }
+.club-league-heading p, .club-league-heading .club-row { grid-column: 1 / -1; }
+.club-league-heading .club-muted { font-size: .85rem; }
+.club-league-heading button { min-height: 34px; padding: .32rem .58rem; font-size: .83rem; }
+.club-overview-picker { margin-bottom: .65rem; }
+.club-overview-picker label { grid-template-columns: auto minmax(0, 1fr); align-items: center; font-size: .85rem; gap: .65rem; }
+.club-overview-picker select { min-height: 36px; }
+.club-player-overview {
+  padding: clamp(.75rem, 2.6vw, 1.35rem); min-width: 0; margin-bottom: .85rem;
+  border: 1px solid #8e8055; border-radius: .9rem;
+  background: radial-gradient(ellipse at 15% 10%, #2c4734, transparent 60%), #182c23;
+  overflow-wrap: anywhere;
+}
+.club-overview-heading, .club-overview-profile { display: flex; align-items: center; gap: .55rem; }
+.club-overview-heading { justify-content: space-between; margin-bottom: .65rem; }
+.club-overview-heading h2, .club-overview-grid h3 { margin: 0; }
+.club-overview-profile { min-width: 0; margin-bottom: .85rem; }
+.club-overview-profile > div { display: grid; gap: .12rem; min-width: 0; }
+.club-overview-profile .club-avatar { width: 2.3rem; height: 2.3rem; font-size: 1.15rem; }
+.club-overview-team { margin-left: auto; padding-left: .6rem; border-left: 1px solid var(--line); }
+.club-overview-team > span { font-size: .85rem; }
+.club-overview-grid { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: start; gap: clamp(.45rem, 2vw, 1.2rem); }
+.club-overview-chart { padding: .6rem; border: 1px solid #50664e; border-radius: .65rem; background: #10251c; }
+.club-overview-chart-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .15rem .4rem; }
+.club-overview-chart-heading small { font-size: .72rem; }
+.club-overview-chart .club-radar { width: min(100%, 240px); margin: .2rem auto; }
+.club-overview-dimensions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .2rem .45rem; margin: 0; }
+.club-overview-dimensions div { display: flex; align-items: baseline; justify-content: space-between; gap: .15rem; padding: .17rem 0; border-top: 1px solid #344d3d; }
+.club-overview-dimensions dt { font-size: .76rem; color: var(--muted); white-space: nowrap; }
+.club-overview-dimensions dd { margin: 0; font-size: .82rem; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; }
+.club-overview-results .club-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.club-overview-results .club-metric { min-height: 3.15rem; align-content: center; }
+.club-overview-unit { font-size: .58em; color: var(--gold); }
+.club-overview-recent { margin-top: .75rem; font-size: .85rem; }
+.club-overview-recent .club-list { margin: .25rem 0 0; }
+.club-overview-recent li { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .15rem .55rem; padding: .36rem 0; }
+.club-overview-recent li > span { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .2rem .35rem; font-variant-numeric: tabular-nums; }
+.club-overview-recent .club-badge { padding: .1rem .35rem; }
+.club-player-overview .club-details { font-size: .82rem; }
+.club-team-name { display: inline-flex; align-items: center; gap: .42rem; vertical-align: middle; min-width: 0; }
+.team-flag {
+  display: inline-block; position: relative; isolation: isolate; flex: none;
+  width: 2.25rem; aspect-ratio: 3 / 2; overflow: hidden;
+  border: 1px solid #d6cc9a70; border-radius: .2rem;
+  background: linear-gradient(146deg, #24533c 0 42%, #e1c285 42% 52%, #17352b 52% 100%);
+}
+.team-flag[data-flag="tide"] {
+  background: linear-gradient(180deg, #123856 0 68%, #9bd3d4 68% 76%, #245e82 76% 86%, #122e46 86%);
+}
+.team-flag[data-flag="tide"]::after {
+  content: ''; position: absolute; width: 29%; aspect-ratio: 1; top: 12%; left: 35%; background: #f4dfaa;
+  clip-path: polygon(50% 0, 61% 36%, 100% 37%, 69% 60%, 80% 98%, 50% 75%, 20% 98%, 31% 60%, 0 37%, 39% 36%);
+}
+.team-flag[data-flag="ember"] { background: linear-gradient(180deg, #69272d 0 31%, #d55d44 31% 43%, #f5be77 43% 57%, #d55d44 57% 69%, #69272d 69%); }
+.team-flag[data-flag="violet"] { background: linear-gradient(90deg, #36234e 0 25%, #645179 25% 75%, #36234e 75%); }
+.team-flag[data-flag="violet"]::after {
+  content: ''; position: absolute; inset: 16% 27%; background: #f0d5ef;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%, 50% 0, 50% 18%, 18% 50%, 50% 82%, 82% 50%, 50% 18%);
+}
+.team-flag[data-flag="dune"] {
+  background: radial-gradient(circle at 56% 38%, #fff0a9 0 15%, transparent 16%),
+    linear-gradient(165deg, transparent 0 61%, #9a5135 61% 71%, #6e3828 71%), #d99150;
+}
+.team-flag[data-flag="frost"] { background: #264655; }
+.team-flag[data-flag="frost"]::after {
+  content: ''; position: absolute; inset: 0; clip-path: polygon(0 0, 100% 0, 69% 50%, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, #65a1b8 0 33%, #e3f1e8 33% 67%, #356984 67%);
+}
+.team-flag[data-flag="onyx"] {
+  background: conic-gradient(#151b23 0 25%, #c29352 25% 50%, #151b23 50% 75%, #c29352 75%);
+}
+.team-flag[data-flag="bronze"] {
+  background: radial-gradient(circle at center, transparent 0 20%, #e7ac76 21% 30%, transparent 31%),
+    linear-gradient(90deg, #214c48 0 15%, #347b71 15% 85%, #214c48 85%);
+}
+.team-flag[data-flag="image"] { background: #101c18; }
+.team-flag img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.team-flag-picker { margin: 0; padding: 0; border: 0; min-width: 0; }
+.team-flag-picker legend { padding: 0; margin-bottom: .42rem; color: var(--muted); }
+.team-flag-picker > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.25rem), 1fr)); gap: .38rem; }
+.team-flag-choice {
+  position: relative; align-content: start; justify-items: center; gap: .3rem; padding: .4rem .22rem;
+  text-align: center; font-size: .75rem; background: #12241b; border: 1px solid var(--line); border-radius: .45rem;
+}
+.team-flag-choice input { position: absolute; z-index: 1; inset: 0; margin: 0; width: 100%; height: 100%; min-height: 0; opacity: 0; cursor: pointer; }
+.team-flag-choice .team-flag { width: min(100%, 3rem); }
+.team-flag-choice:hover { border-color: #8e8055; }
+.team-flag-choice:has(input:checked) { background: #3c3723; color: #f6e2b3; border-color: var(--gold); }
+.team-flag-choice:has(input:focus-visible) { outline: 2px solid var(--gold); outline-offset: 2px; }
 .club-details { margin-top: .8rem; }
 .club-details summary { cursor: pointer; color: var(--gold); }
 #clubStatus { padding: .65rem .85rem; background: #3b3021; border-radius: .55rem; color: #f3d0a2; }
 @media (max-width: 740px) {
   .club-dashboard, .club-detail-columns { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
-  .club-dashboard { grid-template-areas: "actions" "stats"; }
+  .club-dashboard { grid-template-areas: "stats" "actions" "history"; }
+  .club-dashboard-stats { display: contents; }
+  .club-dashboard-overview { grid-area: stats; min-width: 0; }
+  .club-dashboard-history { grid-area: history; min-width: 0; }
   .club-header nav { gap: .4rem; }
+}
+@media (max-width: 480px) {
+  .club-league-heading { padding: .7rem .78rem; }
+  .club-overview-heading h2 { font-size: 1.05rem; }
+  .club-overview-chart { padding: .42rem; }
+  .club-overview-dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .club-overview-results .club-metrics { gap: .32rem; }
+  .club-overview-results .club-metric { padding: .38rem; }
+  .club-overview-results .club-metric span { font-size: .7rem; }
+  .club-overview-results .club-metric strong { font-size: .94rem; }
+  .club-overview-recent { font-size: .78rem; }
 }

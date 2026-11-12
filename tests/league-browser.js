@@ -59,7 +59,8 @@ async function main() {
     }
     const host = await gatedPage(1);
     await api(host, '/api/account/register', { number: '001', password: '7', confirmation: '8' }, 400);
-    const gateCookies = (await host.context().cookies()).map(cookie => cookie.name + '=' + cookie.value).join('; ');
+    const gateOnly = await host.context().cookies();
+    const gateCookies = gateOnly.map(cookie => cookie.name + '=' + cookie.value).join('; ');
     const denied = await new Promise((resolve, reject) => {
       const socket = new WebSocket(base.replace(/^http/, 'ws'), { headers: { Cookie: gateCookies } });
       socket.on('unexpected-response', (_, response) => { response.resume(); resolve(response.statusCode); });
@@ -127,8 +128,40 @@ async function main() {
     await invited.getByRole('button', { name: '加入联赛' }).click();
     await invited.getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
     for (const page of pages.slice(3)) await change(page, 'join', code);
-    for (const [index, page] of pages.slice(0, 4).entries()) await change(page, 'createTeam', code, { name: '队伍' + (index + 1) });
+    const overview = host.getByRole('region', { name: '我的联赛战绩' });
+    assert.equal(await overview.locator('.club-overview-dimensions dd').count(), 6);
+    assert.equal(await overview.getByText('MVP 次数').isVisible(), true);
+    assert.equal(await overview.getByText('击杀数').isVisible(), true);
+    assert.equal(await overview.evaluate(node => node.querySelector('canvas').getBoundingClientRect().bottom < innerHeight), true);
+    await host.getByLabel('队名').fill('队伍1');
+    assert.equal(await host.getByRole('radio').count(), 8);
+    await host.getByRole('radio', { name: '深海星旗' }).check();
+    await host.getByRole('button', { name: '成为队长' }).click();
+    await overview.locator('.team-flag[data-flag="tide"]').waitFor();
+    const folder = path.join(root, 'team-flags');
+    await fs.mkdir(folder);
+    const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBt8AAAAASUVORK5CYII=', 'base64');
+    const file = '试验旗.png';
+    await fs.writeFile(path.join(folder, file), picture);
+    await fs.writeFile(path.join(folder, '非旗帜.txt'), '忽略');
+    await change(pages[1], 'createTeam', code, { name: '队伍2', flagId: 'file:../试验旗.png' }, 400);
+    await pages[1].reload();
+    await pages[1].getByLabel('队名').fill('队伍2');
+    await pages[1].getByRole('radio', { name: '试验旗' }).check();
+    assert.equal(await pages[1].getByRole('radio').count(), 9);
+    await pages[1].getByRole('button', { name: '成为队长' }).click();
+    await pages[1].waitForFunction(() => document.querySelector('.club-overview-team img')?.naturalWidth === 1);
+    for (const [index, page] of pages.slice(2, 4).entries()) await change(page, 'createTeam', code, { name: '队伍' + (index + 3) });
     let league = await detail(host, code);
+    const custom = league.flags.find(flag => flag.id === 'file:' + file);
+    const image = await host.request.get(base + custom.src);
+    assert.equal(image.headers()['content-type'], 'image/png');
+    assert.deepEqual(await image.body(), picture);
+    const anonymous = await browser.newContext();
+    await anonymous.addCookies(gateOnly);
+    assert.equal((await anonymous.request.get(base + custom.src)).status(), 401);
+    await anonymous.close();
+    assert.deepEqual(league.teams.map(team => team.flagId), ['tide', 'file:' + file, 'pine', 'pine']);
     const firstTeam = league.teams[0].id;
     await change(pages[4], 'requestTeam', code, { teamId: firstTeam });
     await change(pages[1], 'approveTeam', code, { teamId: firstTeam, uid: uids[4], accept: true }, 403);
@@ -265,6 +298,13 @@ async function main() {
     catch (error) { throw new Error(host.url() + '\n' + await host.locator('body').innerText(), { cause: error }); }
     assert.equal(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     league = await detail(host, code);
+    const personal = league.players.find(player => player.uid === uids[0]);
+    assert.equal(Number(await overview.locator('.club-metric').filter({ hasText: 'MVP 次数' }).locator('strong').innerText()), personal.mvps);
+    assert.equal(await overview.locator('.club-metric').filter({ hasText: '赛季积分' }).locator('strong').innerText(),
+      (personal.points > 0 ? '+' : '') + Number(personal.points.toFixed(2)) + ' BB');
+    assert.equal(await overview.locator('.club-overview-recent a').count(), 2);
+    assert.equal(await host.getByRole('row').filter({ hasText: '队伍1' }).locator('.team-flag[data-flag="tide"]').count(), 1);
+    assert.equal(await overview.evaluate(node => node.querySelector('.club-metrics').getBoundingClientRect().bottom < innerHeight), true);
     assert.deepEqual(league.players.find(player=>player.uid===uids[4]),absentee);
     assert.equal(league.teamStandings.filter(team => team.place !== undefined).length, 2);
     assert.equal(league.teamStandings.filter(team => team.mvp.length > 0).length, 2);
@@ -281,6 +321,12 @@ async function main() {
 
     const solo = await change(pages[2], 'create', null, { name: '朋友联赛', minMatches: 1 });
     await change(host, 'join', solo.code);
+    await host.goto(base + '/club.html');
+    await host.getByLabel('查看联赛战绩').selectOption(solo.code);
+    await overview.getByText('上榜需 1 场').waitFor();
+    await overview.getByText('未加入队伍').waitFor();
+    await host.getByLabel('查看联赛战绩').selectOption(code);
+    await overview.locator('.team-flag[data-flag="tide"]').waitFor();
     const soloMatch = await change(pages[2], 'open', solo.code);
     await host.goto(base + '/?leagueMatch=' + soloMatch.matchId);
     await idle(host);
@@ -323,6 +369,10 @@ async function main() {
     await host.waitForURL('**/account.html');
     await signIn(host, 1);
     assert.equal((await detail(host, code)).endedAt > 0, true);
+    assert.deepEqual((await detail(host, code)).teams.slice(0, 2).map(team => team.flagId), ['tide', 'file:' + file]);
+    await fs.unlink(path.join(folder, file));
+    assert.equal((await detail(host, code)).teams[1].flagId, 'pine');
+    assert.equal((await host.request.get(base + custom.src)).status(), 404);
     assert.equal((await detail(host, solo.code)).matches.find(match => match.id === interrupted.matchId).status, 'interrupted');
     assert.equal(services.stats.matches.size, 4);
 
@@ -357,7 +407,7 @@ async function main() {
     assert.equal(services.stats.matches.has(second.id), false);
     assert.equal(services.stats.matches.has(soloMatch.matchId), true);
     assert.deepEqual(errors, []);
-    console.log('League browser passed: five accounts, uneven team play, solo participation, watcher exclusion, late entry, UID return, bot removal, rankings and archive deletion.');
+    console.log('League browser passed: five accounts, season dashboard, team flags, three matches, late entry, UID return, bot removal, rankings and archive deletion.');
   } finally {
     await browser?.close();
     for (const ws of wss.clients) ws.terminate();

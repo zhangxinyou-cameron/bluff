@@ -28,6 +28,7 @@
   const muted = text => el('p', { className: 'club-muted' }, text);
   const date = stamp => new Date(stamp).toLocaleString('zh-CN', { hour12: false });
   const number = value => Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  const signed = value => (value > 0 ? '+' : '') + number(value);
   const leagueUrl = code => '/club.html?league=' + encodeURIComponent(code);
   const reportUrl = id => '/club.html?report=' + encodeURIComponent(id);
   const tableUrl = id => '/?leagueMatch=' + encodeURIComponent(id);
@@ -85,7 +86,27 @@
     const history = reports.filter(report => report.leagueCode);
     const valid = history.filter(report => !report.voidReason);
     const net = valid.reduce((sum, report) => sum + report.bb, 0);
-    const signed = value => (value > 0 ? '+' : '') + number(value);
+    const recentCode = history.find(report => leagueNames.has(report.leagueCode))?.leagueCode;
+    const initialCode = recentCode || leagues.find(league => !league.endedAt)?.code || leagues[0]?.code;
+    const initialLeague = initialCode ? await request('/api/league?code=' + encodeURIComponent(initialCode)) : null;
+    const overview = el('div', {}, initialLeague ? leagueOverview(initialLeague) : null);
+    const picker = initialLeague ? select('查看联赛战绩', 'overviewLeague', leagues.map(league =>
+      [league.code, league.name, league.code === initialCode])) : null;
+    if (picker) {
+      const control = picker.querySelector('select');
+      let displayed = initialCode;
+      control.onchange = () => run(async () => {
+        control.disabled = true;
+        try {
+          const league = await request('/api/league?code=' + encodeURIComponent(control.value));
+          overview.replaceChildren(leagueOverview(league));
+          displayed = league.code;
+        } finally {
+          control.value = displayed;
+          control.disabled = false;
+        }
+      });
+    }
     const results = history.map(report => el('article', { className: 'club-record' },
       el('div', {}, el('h3', {}, report.name || '联赛比赛'),
         el('small', {}, `${leagueNames.get(report.leagueCode) || '联赛'} · ${new Date(report.endedAt).toLocaleDateString('zh-CN')} · 出场 ${report.playerHands} 手`)),
@@ -102,12 +123,15 @@
     display(el('header', { className: 'club-hero' }, el('h1', {}, '联赛大厅')),
       el('div', { className: 'club-dashboard' },
         el('section', { className: 'club-dashboard-stats', 'aria-label': '个人联赛战绩' },
-          panel('个人联赛战绩', el('div', { className: 'club-person' },
-            el('span', { className: 'club-avatar', 'aria-hidden': 'true' }, RiverAvatars.get(identity.profile.avatar).emoji),
-            el('strong', {}, identity.profile.name)),
-          el('div', { className: 'club-metrics' }, metric('参赛场次', valid.length),
-            metric('累计手数', valid.reduce((sum, report) => sum + report.playerHands, 0)), metric('净收益 BB', signed(net)))),
-          panel('参赛历史', results.length ? el('div', { className: 'club-card-list' }, results) : muted('完成联赛比赛后，赛报会出现在这里。'))),
+          el('div', { className: 'club-dashboard-overview' },
+            picker ? el('div', { className: 'club-overview-picker' }, picker) : null,
+            initialLeague ? overview : panel('个人联赛战绩', el('div', { className: 'club-person' },
+              el('span', { className: 'club-avatar', 'aria-hidden': 'true' }, RiverAvatars.get(identity.profile.avatar).emoji),
+              el('strong', {}, identity.profile.name)),
+            el('div', { className: 'club-metrics' }, metric('参赛场次', valid.length),
+              metric('累计手数', valid.reduce((sum, report) => sum + report.playerHands, 0)), metric('净收益 BB', signed(net))))),
+          el('div', { className: 'club-dashboard-history' },
+            panel('参赛历史', results.length ? el('div', { className: 'club-card-list' }, results) : muted('完成联赛比赛后，赛报会出现在这里。')))),
         el('section', { className: 'club-dashboard-actions', 'aria-label': '联赛操作' },
           el('div', { className: 'club-launch-actions' }, buttonLink('创建联赛', '/club.html?new'), buttonLink('加入联赛', '/club.html?join', true)),
           panel('我的联赛', el('div', { className: 'club-card-list' }, cards)))));
@@ -156,14 +180,15 @@
     }));
   }
 
-  function radar(values) {
-    if (!Object.values(values).some(value => value.score !== null)) return null;
-    const canvas = el('canvas', { className: 'club-radar', width: 300, height: 250, 'aria-hidden': true });
+  function radar(values, overview = false) {
+    if (!overview && !Object.values(values).some(value => value.score !== null)) return null;
+    const width = overview ? 260 : 300;
+    const canvas = el('canvas', { className: 'club-radar', width, height: 250, 'aria-hidden': 'true' });
     const ctx = canvas.getContext('2d');
     const labels = Object.entries(dimensionNames);
     const point = (index, radius) => {
       const angle = index * Math.PI / 3 - Math.PI / 2;
-      return [150 + Math.cos(angle) * radius, 125 + Math.sin(angle) * radius];
+      return [width / 2 + Math.cos(angle) * radius, 125 + Math.sin(angle) * radius];
     };
     function polygon(radii) {
       ctx.beginPath();
@@ -178,7 +203,7 @@
       ctx.fillStyle = '#e4c98d42'; ctx.fill();
       ctx.strokeStyle = '#e4c98d'; ctx.stroke();
     }
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '14px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = (overview ? 16 : 14) + 'px system-ui';
     labels.forEach(([, name], index) => {
       ctx.fillStyle = '#e6e9dc'; ctx.fillText(name, ...point(index, 115));
       if (items[index] === null) return;
@@ -191,7 +216,70 @@
     return panel(personName(player), muted(`${player.title || '牌风待定'} · ${player.hands} 手`), radar(player.values), dimensionList(player.values));
   }
 
-  function teamsView(league) {
+  function teamFlag(flag) {
+    const node = el('span', { className: 'team-flag', 'aria-hidden': 'true', 'data-flag': flag?.src ? 'image' : flag?.id || 'pine' });
+    if (flag?.src) {
+      const picture = el('img', { alt: '', decoding: 'async' });
+      picture.onerror = () => { picture.remove(); node.dataset.flag = 'pine'; };
+      picture.src = flag.src;
+      node.append(picture);
+    }
+    return node;
+  }
+
+  function teamIdentity(team, flags) {
+    return el('span', { className: 'club-team-name' }, teamFlag(flags.get(team.flagId)), el('span', {}, team.name));
+  }
+
+  function flagPicker(flags) {
+    return el('fieldset', { className: 'team-flag-picker' }, el('legend', {}, '队伍旗帜'),
+      el('div', {}, flags.map((flag, index) => el('label', { className: 'team-flag-choice' },
+        el('input', { type: 'radio', name: 'flagId', value: flag.id, checked: index === 0 }),
+        teamFlag(flag), el('span', {}, flag.name)))));
+  }
+
+  function leagueOverview(league, flags = new Map(league.flags.map(flag => [flag.id, flag]))) {
+    const me = identity.profile.uid;
+    const player = league.players.find(person => person.uid === me);
+    const team = league.teams.find(team => team.members.includes(me));
+    const values = player?.values || Object.fromEntries(Object.keys(dimensionNames).map(key => [key, { score: null }]));
+    const previous = league.matches.filter(match => match.status === 'completed' && match.myResult?.hands > 0).slice(-3).reverse();
+    const knockoutCount = player && !player.knockoutMatches ? '—' : number(player?.knockouts ?? 0);
+    return el('section', { className: 'club-player-overview', 'aria-label': '我的联赛战绩' },
+      el('header', { className: 'club-overview-heading' }, el('h2', {}, '我的联赛战绩'),
+        badge(player?.place ? `个人第 ${player.place} 名` : `上榜需 ${league.minMatches} 场`, !!player?.place)),
+      el('div', { className: 'club-overview-profile' },
+        el('span', { className: 'club-avatar', 'aria-hidden': 'true' }, RiverAvatars.get(identity.profile.avatar).emoji),
+        el('div', {}, el('strong', {}, identity.profile.name), el('small', {}, player?.title || '称号待定')),
+        el('div', { className: 'club-overview-team' }, el('small', {}, '所属队伍'), team ? teamIdentity(team, flags) : el('span', {}, '未加入队伍'))),
+      el('div', { className: 'club-overview-grid' },
+        el('div', { className: 'club-overview-chart' },
+          el('div', { className: 'club-overview-chart-heading' }, el('h3', {}, '赛季六维'),
+            Object.values(values).some(item => item.score === null) ? el('small', {}, '— 样本不足') : null),
+          radar(values, true),
+          el('dl', { className: 'club-overview-dimensions' }, Object.entries(dimensionNames).map(([key, name]) => {
+            const score = values[key].score;
+            return el('div', {}, el('dt', {}, name),
+              el('dd', { 'aria-label': score === null ? '样本不足' : null }, score ?? '—'));
+          }))),
+        el('div', { className: 'club-overview-results' },
+          el('div', { className: 'club-metrics' },
+            metric('赛季积分', [signed(player?.points ?? 0),
+              el('small', { className: 'club-overview-unit' }, league.format === 'points:2' ? ' BB' : ' 分')]),
+            metric('MVP 次数', player?.mvps ?? 0),
+            metric('击杀数', knockoutCount), metric('参赛场次', player?.matches ?? 0)),
+          el('div', { className: 'club-overview-recent' }, el('h3', {}, '近期赛果'),
+            previous.length ? list(previous.map(match => [
+              link(match.name, reportUrl(match.id)),
+              el('span', {}, match.voidReason ? '已作废' : signed(match.myResult.bb) + ' BB',
+                match.myResult.mvp ? badge('MVP', true) : null,
+                !match.voidReason && match.myResult.knockouts > 0 ? badge('击杀 ' + match.myResult.knockouts) : null)
+            ])) : muted('完成比赛后在这里查看赛果。')))),
+      el('details', { className: 'club-details' }, el('summary', {}, '统计口径'),
+        muted('单场净收益 BB 最高的参赛者获得 MVP，并列者共享。淘汰赛中，独赢出局者最后参与的底池可记一次击杀。击杀自本版开始累计。')));
+  }
+
+  function teamsView(league, flags) {
     const me = identity.profile.uid;
     const members = new Map(league.members.map(member => [member.uid, member]));
     const mine = league.teams.find(team => team.members.includes(me));
@@ -205,26 +293,27 @@
         ? team.requests.includes(me) ? muted('等待队长审批') : action('申请加入', () => run(() => mutate('requestTeam', { teamId: team.id }))) : null;
       const leave = editing && mine === team ? league.locked.includes(me) ? muted('已锁定本届队伍') :
         action('退出队伍', () => run(() => mutate('leaveTeam')), true) : null;
-      return panel(team.name, muted(`${team.members.length}/${league.teamSize} 人`), roster, requests, apply, leave);
+      return panel(teamIdentity(team, flags), muted(`${team.members.length}/${league.teamSize} 人`), roster, requests, apply, leave);
     });
     if (editing && !mine && league.teams.length < league.teamCount) {
-      tiles.push(panel('创建队伍', form('成为队长', [field('队名', 'name', { maxlength: 40 })], values => mutate('createTeam', values))));
+      tiles.push(panel('创建队伍', form('成为队长', [field('队名', 'name', { maxlength: 40 }), flagPicker(league.flags)],
+        values => mutate('createTeam', values))));
     }
     return el('section', {}, el('h2', {}, `队伍 ${league.teams.length}/${league.teamCount}`), grid(tiles));
   }
 
-  function showTeamRank(league) {
+  function showTeamRank(league, flags) {
+    const teams = new Map(league.teams.map(team => [team.id, team]));
     if (league.format === 'points:2') {
       return panel('团队积分榜', standings(['排名', '队伍', '参赛场数', '场均积分 BB', '累计积分 BB', '净收益筹码', '队伍 MVP'],
-        league.teamStandings.map(team => [team.place || '待达标', team.name, team.matches, number(team.average),
+        league.teamStandings.map(team => [team.place || '待达标', teamIdentity(teams.get(team.id) || team, flags), team.matches, number(team.average),
           number(team.points), number(team.profit), team.mvp.map(player => player.name).join('、') || '—'])));
     }
-    const names = new Map(league.teams.map(team => [team.id, team.name]));
     return panel('团队积分榜', standings(['排名', '队伍', '场数', '对阵胜/平/负', '场均分', '总分', '净收益 BB', '队伍 MVP'],
-      league.teamStandings.map(result => [result.place || '待达标', result.name, result.matches, `${result.wins}/${result.draws}/${result.losses}`,
+      league.teamStandings.map(result => [result.place || '待达标', teamIdentity(teams.get(result.id) || result, flags), result.matches, `${result.wins}/${result.draws}/${result.losses}`,
         number(result.average), number(result.points), number(result.bb), result.mvp.map(player => player.name).join('、') || '—'])),
     el('details', { className: 'club-details' }, el('summary', {}, '交锋记录与 MVP 数据'), list(league.teamStandings.map(team =>
-      [el('strong', {}, team.name), muted(Object.entries(team.headToHead).map(([id, value]) => `对 ${names.get(id)} ${value.matches} 次、${number(value.points)} 分`).join(' · ') || '暂无交锋'),
+      [el('strong', {}, team.name), muted(Object.entries(team.headToHead).map(([id, value]) => `对 ${teams.get(id)?.name} ${value.matches} 次、${number(value.points)} 分`).join(' · ') || '暂无交锋'),
         team.mvp.map(player => muted(`${player.name} · ${player.matches} 场 / ${player.hands} 手 · ${number(player.bb)} BB · ${number(player.bb100)} BB/100`))]))));
   }
 
@@ -277,6 +366,7 @@
     lastDetail = signature;
     const me = identity.profile.uid;
     const owner = league.owner === me;
+    const flags = new Map(league.flags.map(flag => [flag.id, flag]));
     const active = league.matches.find(match => ['waiting', 'running'].includes(match.status));
     const netPoints = league.format === 'points:2';
     const matchPanel = active ? matchRoom(league, active, owner || active.owner === me) :
@@ -303,7 +393,7 @@
       league.players.map(player => [player.place || '待达标', personName(player), player.matches, player.hands,
         number(player.average), number(player.points), number(player.profit), ...(netPoints?[]:[number(player.bb)]), number(player.bb100)])));
     const expanded = [...view.querySelectorAll('details')].map(details => details.open);
-    display(el('header', { className: 'club-hero' },
+    display(el('header', { className: 'club-hero club-league-heading' },
       badge(league.endedAt ? '已结算' : '进行中', !league.endedAt), el('h1', {}, league.name),
       muted(`房间号 ${league.code} · ${netPoints?'净收益每 1 BB 计 1 分':`每场至少 ${league.minHands} 手`} · 上榜至少 ${league.minMatches} 场`),
       !league.endedAt ? row(action('复制联赛邀请', async () => {
@@ -311,9 +401,9 @@
         try { await navigator.clipboard.writeText(url); tell('邀请链接已复制'); }
         catch { prompt('复制联赛邀请链接', url); }
       }, true)) : null),
-      matchPanel, teamsView(league),
+      leagueOverview(league, flags), matchPanel, teamsView(league, flags),
       el('div', { className: 'club-detail-columns' },
-        el('div', {}, showTeamRank(league), personal,
+        el('div', {}, showTeamRank(league, flags), personal,
           league.players.length ? el('details', { className: 'club-details' }, el('summary', {}, '联赛六维与称号'),
             ratingHelp(), grid(league.players.map(dimensionsCard))) : null),
         el('div', {}, history, owner && !active ? leagueManagement(league) : null)));

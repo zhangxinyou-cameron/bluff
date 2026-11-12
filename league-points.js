@@ -22,13 +22,21 @@ function aggregate(league, matches, netPoints = false) {
     const counted = match.status === 'completed' && !match.voidReason && match.hands >= (netPoints ? 1 : league.minHands);
     if (!counted) continue;
     const teams = new Map();
-    for (const player of match.players) {
-      if (netPoints && !player.hands) continue;
-      if (!playerRows.has(player.uid)) playerRows.set(player.uid, { uid: player.uid, matches: 0, hands: 0, profit: 0, bb: 0, points: 0, metrics: empty() });
+    const participants = match.players.filter(player => player.hands > 0);
+    const highest = Math.max(...participants.map(player => player.bb));
+    const mvpUids = new Set(participants.filter(player => !close(player.bb - highest)).map(player => player.uid));
+    for (const player of netPoints ? participants : match.players) {
+      if (!playerRows.has(player.uid)) playerRows.set(player.uid, { uid: player.uid, matches: 0, hands: 0, profit: 0, bb: 0, points: 0,
+        mvps: 0, knockouts: 0, knockoutMatches: 0, metrics: empty() });
       const row = playerRows.get(player.uid);
       row.name = player.name;
       row.avatar = player.avatar;
       row.matches++;
+      if (mvpUids.has(player.uid)) row.mvps++;
+      if (Number.isInteger(player.knockouts)) {
+        row.knockouts += player.knockouts;
+        row.knockoutMatches++;
+      }
       for (const field of ['hands', 'profit', 'bb']) row[field] += player[field];
       row.points += netPoints ? player.bb : player.points;
       for (const key of Object.keys(row.metrics)) {
@@ -71,7 +79,7 @@ function aggregate(league, matches, netPoints = false) {
       own.points = points / Math.max(1, teams.size - 1);
       row.points += own.points;
     }
-    ledger.push({ id: match.id, teams: [...teams.values()] });
+    ledger.push({ id: match.id, teams: [...teams.values()], mvpUids: [...mvpUids] });
   }
   const players = [...playerRows.values()].map(row => {
     const values = scores(row.metrics, row.hands);

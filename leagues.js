@@ -3,6 +3,7 @@ const path = require('node:path');
 const { error, profile } = require('./accounts');
 const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const points = require('./league-points');
+const { flagCatalog, customFlags, defaultFlagId } = require('./team-flags');
 
 const formats = new Map([[`${points.id}:${points.version}`, points]]);
 const NET_FORMAT = 'points:2';
@@ -14,6 +15,7 @@ const label = value => typeof value === 'string' ? value.trim().slice(0, 40) : '
 class Leagues {
   constructor(root, stats, accounts) {
     this.directory = path.join(root, 'leagues');
+    this.flagsDirectory = path.join(root, 'team-flags');
     this.leagues = new Map(readRecords(this.directory).map(record => [record.code, record]));
     this.stats = stats;
     this.accounts = accounts;
@@ -29,6 +31,10 @@ class Leagues {
 
   matches(league) {
     return [...this.stats.matches.values()].filter(match => match.leagueCode === league.code).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  flagImage(id) {
+    return customFlags(this.flagsDirectory).find(flag => flag.id === id);
   }
 
   purge(marker) {
@@ -60,14 +66,22 @@ class Leagues {
     const format = version === NET_FORMAT ? points : formats.get(version);
     if (!format) throw error(503, '当前联赛规则版本未安装');
     const { players, teams: teamStandings, ledger } = format.aggregate(league, matches, version === NET_FORMAT);
+    const flags = flagCatalog(this.flagsDirectory);
+    const flagIds = new Set(flags.map(flag => flag.id));
+    const personalMvps = new Set(ledger.filter(entry => entry.mvpUids?.includes(uid)).map(entry => entry.id));
     return { ...league, format: version, teamCount: league.teamCount || 16, teamSize: league.teamSize || 8,
+      flags,
       members: league.members.map(id => profile(this.accounts.byUid.get(id))),
-      teams: league.teams.map(team => ({ ...team, requests: team.captain === uid ? team.requests : team.requests.filter(id => id === uid) })),
+      teams: league.teams.map(team => ({ ...team, flagId: flagIds.has(team.flagId) ? team.flagId : defaultFlagId,
+        requests: team.captain === uid ? team.requests : team.requests.filter(id => id === uid) })),
       matches: matches.map(({ players, ...match }) => {
         const room = active(match) ? roomForCode(match.code) : null;
         const seats = room ? [...room.people.values()].filter(person => person.connected && !person.retired)
           .map(({ uid, name, avatar, id, ready }) => ({ uid, name, avatar, host: id === 0, ready: id === 0 || ready })) : [];
+        const personal = players?.find(player => player.uid === uid);
         return { ...match, participantCount: players?.length ?? (room ? seats.length : (match.participantUids?.length || 0)),
+          ...(personal ? { myResult: { bb: personal.bb, hands: personal.hands, mvp: personalMvps.has(match.id),
+            knockouts: personal.knockouts ?? null } } : {}),
           ...(room ? { seats, capacity: room.maxPlayers } : {}) };
       }),
       locked: league.members.filter(id => this.locked(league, id)), players, teamStandings, ledger };
@@ -183,7 +197,9 @@ class Leagues {
       if (mine || !name || league.teams.length >= league.teamCount || league.teams.some(row => row.name === name)) {
         throw error(409, '已有队伍、队名重复或队伍名额已满');
       }
-      league.teams.push({ id: randomUUID(), name, captain: uid, members: [uid], requests: [] });
+      const flagId = data.flagId === undefined ? defaultFlagId : data.flagId;
+      if (!flagCatalog(this.flagsDirectory).some(flag => flag.id === flagId)) throw error(400, '请选择当前可用的队旗');
+      league.teams.push({ id: randomUUID(), name, flagId, captain: uid, members: [uid], requests: [] });
     } else if (data.action === 'requestTeam') {
       if (mine || !team || team.members.length >= league.teamSize) throw error(409, '无法申请该队伍');
       if (!team.requests.includes(uid)) team.requests.push(uid);

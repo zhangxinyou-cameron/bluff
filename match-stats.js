@@ -102,7 +102,7 @@ class MatchStats {
       const person = room.people.get(seat);
       if (!person?.uid || room.statistics.players.has(seat)) continue;
       room.statistics.players.set(seat, { uid: person.uid, name: person.name, avatar: person.avatar,
-        teamId: teamForUid(person.uid) ?? null, hands: 0, metrics: empty() });
+        teamId: teamForUid(person.uid) ?? null, hands: 0, knockouts: 0, metrics: empty() });
     }
     room.statistics.hand = {
       number: g.handNumber, forced: new Map(g.players.map(p => [p.id, p.totalBet])),
@@ -163,6 +163,14 @@ class MatchStats {
         const contested = g.pots.reduce((sum, pot, index) => sum + (g.potEligibility[index].includes(seat) && g.potEligibility[index].length > 1 ? pot.amount : 0), 0);
         const actual = g.pots.reduce((sum, pot) => sum + (pot.awards.find(a => a.seatId === seat)?.amount || 0), 0);
         if (contested) add(row.metrics, 'luck', Math.min(1, Math.max(0, 0.5 + (actual - expected.get(seat)) / (2 * contested))));
+      }
+      if (!g.allowBuyIn && player.eliminatedHand === hand.number) {
+        const potIndex = g.potEligibility.findLastIndex(seats => seats.includes(seat));
+        const winners = g.pots[potIndex]?.winners;
+        if (winners?.length === 1) {
+          const winner = stats.players.get(winners[0]);
+          if (winner) winner.knockouts++;
+        }
       }
     }
     stats.lastHand = hand.number;

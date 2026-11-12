@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { aggregate } = require('../league-points');
-const { empty, scores, title } = require('../match-stats');
+const { MatchStats, empty, scores, title } = require('../match-stats');
+const E = require('../public/poker-engine');
 
 function match(id, bigBlind, rows, overrides = {}) {
   return {
@@ -63,4 +64,53 @@ test('net BB counts actual hands only and adds uneven team contributions without
   assert.equal(result.teams.find(row => row.id === 'A').average, 1.5);
   assert.equal(result.teams.find(row => row.id === 'C').matches, 0);
   assert.equal(result.ledger[1].teams.length, 1);
+});
+
+test('season totals count tied MVPs, retain recorded knockouts and skip void matches', () => {
+  const league = { minHands: 1, minMatches: 1, teams: [] };
+  const legacy = match('legacy', 20, [['a', null, 20, 0], ['b', null, 20, 0], ['c', null, -40, 0]]);
+  const current = match('current', 20, [['a', null, 40, 0], ['b', null, -40, 0]]);
+  current.players[0].knockouts = 2;
+  current.players[1].knockouts = 0;
+  const voided = match('voided', 20, [['c', null, 20, 0]], { voidReason: '测试' });
+  const { players, ledger } = aggregate(league, [legacy, current, voided], true);
+  assert.deepEqual(ledger.map(row => row.mvpUids), [['a', 'b'], ['a']]);
+  const totals = new Map(players.map(row => [row.uid, [row.mvps, row.knockouts, row.knockoutMatches]]));
+  assert.deepEqual(totals.get('a'), [2, 2, 1]);
+  assert.deepEqual(totals.get('b'), [1, 0, 1]);
+  assert.deepEqual(totals.get('c'), [0, 0, 0]);
+});
+
+test('knockout credits the sole winner of the last eligible side pot once', () => {
+  const stats = Object.create(MatchStats.prototype);
+  function settle(stacks, hands, board, allowBuyIn = false) {
+    const game = E.createGame(stacks.map((chips, id) => ({ chips, id })), 20, { allowBuyIn });
+    const people = new Map(stacks.map((_, id) => [id, { uid: String(id), name: String(id) }]));
+    const room = { game, people, settings: { allowBuyIn } };
+    const suits = { s: 0, h: 1, c: 2, d: 3 }, ranks = { T: 10, J: 11, Q: 12, K: 13, A: 14 };
+    const cards = text => text.split(' ').map(card => {
+      const rank = ranks[card[0]] || Number(card[0]), suit = suits[card[1]];
+      return { rank, suit, id: suit * 13 + rank - 2 };
+    });
+    Object.assign(game, { dealerIndex: 0, handNumber: 1, phase: 'river', communityCards: cards(board) });
+    game.players.forEach((player, index) => Object.assign(player, {
+      chips: 0, totalBet: stacks[index], isActive: true, folded: false,
+      holeCards: cards(hands[index]), chipsBeforeHand: stacks[index]
+    }));
+    game.pot = stacks.reduce((sum, stack) => sum + stack, 0);
+    stats.open(room);
+    stats.startHand(room);
+    E.settle(game, true);
+    stats.settleHand(room);
+    stats.settleHand(room);
+    return {
+      eliminated: game.players.filter(player => player.eliminatedHand === 1).map(player => player.id),
+      knockouts: [...room.statistics.players.values()].map(row => row.knockouts)
+    };
+  }
+  const sidePot = [[50, 100, 100], ['As Ah', 'Ks Kh', 'Qs Qh'], '2s 3h 7c 9d Js'];
+  assert.deepEqual(settle(...sidePot), { eliminated: [2], knockouts: [0, 1, 0] });
+  assert.deepEqual(settle(...sidePot, true), { eliminated: [], knockouts: [0, 0, 0] });
+  assert.deepEqual(settle([50, 50, 50], ['Ts 3h', 'Th 5h', '6h 7h'], 'As Kh Qs Jd 9d'),
+    { eliminated: [2], knockouts: [0, 0, 0] });
 });
