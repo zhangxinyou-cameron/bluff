@@ -39,10 +39,12 @@ module.exports=function install(RoomManager){
         }
         const ws=this.connections.get(room.code)?.get(data.target);if(ws){ws.send(JSON.stringify({type:'kicked',fatal:true,message:'你已被房主移出房间，可手动重新加入',rejoinToken:target?.rejoinToken}));this.connections.get(room.code).delete(data.target);ws.close(4003,'Removed by host');}
         for(const request of g?.peekRequests||[])if(request.status==='pending'&&(request.from===data.target||request.to===data.target))request.status='expired';
-        const before=g?.phase;if(player){player.connected=false;E.disconnect(g,data.target);}else delete room.aiSlots[data.target];
+        const before=g?.phase,from=g?.communityCards.length;if(player){player.connected=false;E.disconnect(g,data.target);}else delete room.aiSlots[data.target];
         this.event(room,'system',`${target?.name||player?.name} 已被房主移出房间`);
         if(g?.phase==='runout_vote'&&g.runoutVote.eligibleIds.includes(data.target))this.finishVote(room,false,'有争池玩家离桌，本手发一次牌');
-        else if(g&&before!=='hand_over'&&['hand_over','tournament_over'].includes(g.phase)){this.recordSettlement(room);this.pace(room,'runout',g.communityCards.length,this.timing.action);}
+        else if(g&&E.betting({phase:before})&&['hand_over','tournament_over'].includes(g.phase)){
+          this.pace(room,g.showdownOccurred?'runout':null,from,this.timing.action);this.recordSettlement(room);
+        }
         if(g?.phase==='hand_over')this.tryStart(room);
         return{ok:true};
       }
@@ -50,14 +52,16 @@ module.exports=function install(RoomManager){
         if(person.id!==0)return fail('只有房主可以切换牌制');
         if(!['auto','short','standard'].includes(data.mode))return fail('牌制无效');
         if(g&&!['hand_over','tournament_over'].includes(g.phase))return fail('请在本手结束后切换牌制');
-        room.settings.deckMode=data.mode;if(g){g.deckMode=data.mode;g.nextHandReady=[];g.revision++;}
+        if(!g){this.updateWaitingRules(room,{...room.settings,deckMode:data.mode});return{ok:true};}
+        room.settings.deckMode=data.mode;g.deckMode=data.mode;g.nextHandReady=[];g.revision++;
         this.event(room,'system',`房主选择${{auto:'自动人数牌制',short:'36张短牌',standard:'52张标准德扑'}[data.mode]}，下一手生效，请重新确认`);return{ok:true};
       }
       if(data.type==='blindMode'){
         if(person.id!==0)return fail('只有房主可以切换底注规则');
         if(!['auto','ante','position','standard'].includes(data.mode))return fail('底注规则无效');
         if(g&&g.phase!=='hand_over')return fail('请在本手结束后切换底注规则');
-        room.settings.blindMode=data.mode;if(g){g.blindMode=data.mode;g.nextHandReady=[];g.revision++;}
+        if(!g){this.updateWaitingRules(room,{...room.settings,blindMode:data.mode});return{ok:true};}
+        room.settings.blindMode=data.mode;g.blindMode=data.mode;g.nextHandReady=[];g.revision++;
         this.event(room,'system',`房主选择${{auto:'跟随牌制默认底注',ante:'全员底注＋庄家盲注',position:'庄家左手第一位1倍、第二位半倍盲注',standard:'标准位置制：SB半倍、BB1倍，翻前从BB后一位行动'}[data.mode]}，下一手生效，请重新确认`);return{ok:true};
       }
       if(data.type==='phrase'||data.type==='gift'){

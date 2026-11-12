@@ -11,11 +11,21 @@ test('server snapshots and reconnects expose only revealed boards and withhold r
   let now=1000;t.mock.method(Date,'now',()=>now);const m=new RoomManager(new Map());t.after(()=>m.dispose());
   const g=E.createGame([{id:0,chips:1000},{id:1,chips:1000}],20,{allowBuyIn:true,runTwiceEnabled:true});E.startHand(g);
   while(E.betting(g)){const p=g.players[g.currentPlayerIndex];E.applyAction(g,p.id,'allin');}E.resolveRunout(g,true);
-  const room={game:g,settings:{runoutDelayMs:3000},people:new Map()};m.pace(room,'runout',0,100);const full=JSON.stringify(g.runoutBoards);
-  for(const [elapsed,lengths]of[[0,[0]],[4999,[0]],[5000,[3]],[8000,[4]],[11000,[5]],[14000,[5,3]],[17000,[5,4]],[20000,[5,5]]]){
+  const room={game:g,settings:{runoutDelayMs:3000},people:new Map(),history:[]};m.pace(room,'runout',0,100);m.recordSettlement(room);const full=JSON.stringify(g.runoutBoards);
+  const socket=()=>({readyState:1,seatId:0,send(raw){this.message=JSON.parse(raw);}});
+  for(const [elapsed,lengths,count]of[[0,[0],0],[4999,[0],0],[5000,[3],1],[8000,[4],2],[11000,[5],3],[14000,[5,3],4],[17000,[5,4],5],[20000,[5,5],6],[22999,[5,5],6]]){
     now=1000+elapsed;const view=m.serialize(room,0);assert.deepEqual(view.runoutBoards.map(b=>b.length),lengths);assert.deepEqual(view.pots,[]);assert.deepEqual(view.winners,[]);assert.ok(view.players.every(p=>p.handResult==null));assert.ok(view.players.every(p=>p.holeCards.length===2));assert.equal(view.players.reduce((s,p)=>s+p.chips-p.bankDebt,0)+view.pot,g.initialTotal);
+    const ws=socket();m.snapshot(room,ws);
+    assert.equal(ws.message.events.length,count);
+    m.history(room,ws,0);
+    assert.equal(ws.message.events.length,count);
+    assert.ok(ws.message.events.every(event=>event.kind==='street'&&event.runout&&event.count<=lengths[event.board]));
   }
-  now=24000;assert.deepEqual(m.serialize(room,0).pots,g.pots);assert.equal(JSON.stringify(g.runoutBoards),full);m.check(room);
+  now=24000;const ws=socket();m.snapshot(room,ws);assert.deepEqual(ws.message.game.pots,g.pots);assert.equal(ws.message.presentation,null);
+  assert.ok(ws.message.events.some(event=>event.kind==='payout'));
+  assert.equal(ws.message.events.filter(event=>event.kind==='result').length,1);
+  m.recordSettlement(room);m.history(room,ws,0);assert.equal(ws.message.events.filter(event=>event.kind==='result').length,1);
+  assert.equal(JSON.stringify(g.runoutBoards),full);m.check(room);
 });
 
 test('pre-runout showing exposes contenders but keeps an unconsenting folded hand private',t=>{

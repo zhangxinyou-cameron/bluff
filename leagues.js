@@ -64,7 +64,7 @@ class Leagues {
         const seats = room ? [...room.people.values()].filter(person => person.connected && !person.retired)
           .map(({ uid, name, avatar, id, ready }) => ({ uid, name, avatar, host: id === 0, ready: id === 0 || ready })) : [];
         return { ...match, participantCount: players?.length || match.participantUids?.length || 0,
-          ...(room ? { seats, capacity: room.maxPlayers } : {}) };
+          ...(room ? { seats, capacity: room.maxPlayers, lineup: this.lineup(league, seats) } : {}) };
       }),
       locked: league.members.filter(id => this.locked(league, id)), players, teamStandings, ledger };
   }
@@ -88,21 +88,29 @@ class Leagues {
     return league;
   }
 
-  roster(match, humans) {
-    const league = this.league(match.leagueCode, humans[0]?.uid);
+  lineup(league, humans) {
+    if (league.mode !== 'team') return { teams: [], balanced: true, seatTeams: {} };
+    const byUid = new Map(league.teams.flatMap(team => team.members.map(uid => [uid, team])));
     const teams = {};
     const counts = new Map();
     for (const { uid } of humans) {
-      this.admit(match, uid);
-      if (league.mode !== 'team') continue;
-      const team = league.teams.find(row => row.members.includes(uid));
+      const team = byUid.get(uid);
+      if (!team) continue;
       teams[uid] = team.id;
       counts.set(team.id, (counts.get(team.id) || 0) + 1);
     }
-    if (league.mode === 'team' && (counts.size < 2 || new Set(counts.values()).size !== 1)) {
+    return { teams: league.teams.filter(team => counts.has(team.id)).map(team => ({ name: team.name, count: counts.get(team.id) })),
+      balanced: counts.size >= 2 && new Set(counts.values()).size === 1, seatTeams: teams };
+  }
+
+  roster(match, humans) {
+    const league = this.league(match.leagueCode, humans[0]?.uid);
+    for (const { uid } of humans) this.admit(match, uid);
+    const { balanced, seatTeams } = this.lineup(league, humans);
+    if (!balanced) {
       throw error(400, '团队场至少需要两支队伍，且各队上场人数必须相同');
     }
-    return { ...match, teams };
+    return { ...match, teams: seatTeams };
   }
 
   locked(league, uid) {

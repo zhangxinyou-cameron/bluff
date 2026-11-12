@@ -11,6 +11,19 @@ function fixture(t,n=2,timings={}){
   function start(){for(const ws of sockets.slice(1))command(ws,'ready');assert.ok(command(sockets[0],'startGame').ok);}
   return{manager,sockets,room:manager.games.get(code),join,command,start,latest:ws=>ws.messages.filter(m=>m.type==='snapshot').at(-1)};
 }
+test('waiting readiness survives repeated settings and requires the current revision after a rule change',t=>{
+  const f=fixture(t),[host,guest]=f.sockets;
+  assert.ok(f.command(guest,'ready',{rulesRevision:0}).ok);
+  const settings={...f.room.settings};
+  assert.ok(f.command(host,'roomSettings',{settings}).ok);
+  assert.equal(f.latest(guest).waiting.canStart,true);
+  assert.ok(f.command(host,'blindMode',{mode:'standard'}).ok);
+  assert.equal(f.latest(guest).waiting.canStart,false);
+  assert.deepEqual(f.latest(guest).waiting.awaiting,['P1']);
+  assert.equal(f.command(guest,'ready',{rulesRevision:0}).ok,false);
+  assert.ok(f.command(guest,'ready',{rulesRevision:1}).ok);
+  assert.equal(f.latest(host).waiting.canStart,true);
+});
 test('8 seats work, a ninth player is rejected, and authoritative snapshots hide other hole cards',t=>{
   const f=fixture(t,8);const ninth=f.join();assert.match(ninth.messages.at(-1).message,/最多支持8人/);f.sockets.pop();f.start();
   assert.equal(f.room.game.variant,'standard');

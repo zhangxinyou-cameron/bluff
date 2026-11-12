@@ -1,4 +1,5 @@
 const { error, profile } = require('./accounts');
+const { loginDestination } = require('./access');
 
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -40,13 +41,15 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
     if (!access.authenticated(req)) throw error(401, '本次访问验证已过期');
     if (session) revoke(token => token === session.token);
     res.setHeader('Set-Cookie', accounts.cookie(req, accounts.issue(record, gateKey)));
-    json(res, { profile: profile(record) });
+    json(res, { profile: profile(record), destination: loginDestination(data.destination) });
     return true;
   }
   if (!uid) {
     if (req.method === 'GET' && accountAssets.has(pathname)) return false;
     if (req.method === 'GET' && ['/', '/index.html', '/club.html'].includes(pathname)) {
-      res.writeHead(303, { Location: '/account.html', 'Cache-Control': 'no-store' });
+      const destination = loginDestination(req.url);
+      const location = destination === '/' ? '/account.html' : '/account.html?next=' + encodeURIComponent(destination);
+      res.writeHead(303, { Location: location, 'Cache-Control': 'no-store' });
       res.end();
     } else json(res, { message: '请先登录个人账号' }, 401);
     return true;

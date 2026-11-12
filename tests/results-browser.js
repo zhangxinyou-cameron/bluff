@@ -19,8 +19,10 @@ const {passwordRecord}=require('../access');
   }
   try{
     const host=await open(null,'小红'),room=await host.locator('#displayRoomCode').textContent();
+    await host.locator('#minPlayersSel').selectOption('1');
+    await host.waitForFunction(()=>!RiverSession.getDiagnostics().pending);
     const beta=await open(room,'Beta'),ming=await open(room,'小明'),pages=[host,beta,ming];
-    await host.locator('#minPlayersSel').selectOption('1');await host.locator('#startBtn').click();
+    await host.locator('#startBtn').click();
     // Deterministic result fixture produced by the actual engine, then sent over real sockets.
     {
       const activeRoom=roomManager.games.get(room),players=activeRoom.game.players.map(p=>({...p,chips:0}));const g=PokerEngine.createGame(players,20);

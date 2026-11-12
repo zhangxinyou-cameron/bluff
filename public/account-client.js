@@ -31,9 +31,10 @@
     submit.disabled = toggle.disabled = true;
     message.textContent = '';
     try {
-      await request('/api/account/' + (register ? 'register' : 'login'), Object.fromEntries(new FormData(form)));
+      const destination = new URLSearchParams(location.search).get('next');
+      const result = await request('/api/account/' + (register ? 'register' : 'login'), { ...Object.fromEntries(new FormData(form)), destination });
       const room = /^#room=[0-9]{6}$/.test(location.hash) ? location.hash : '';
-      location.replace('/' + room);
+      location.replace(!result.destination || result.destination === '/' ? '/' + room : result.destination);
     } catch (error) {
       message.textContent = error.message;
     } finally {

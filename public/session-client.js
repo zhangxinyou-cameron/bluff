@@ -12,6 +12,8 @@
   let rendering=false,renderErrors=0,betNoticeTimer=null;
   let warningUntil=0;
   const now=()=>Date.now()+clockOffset;
+  // Keep the result screen locked until a server snapshot carries the settled runout.
+  const presentationRemaining=data=>Math.max(data.presentation?.timeline?1:0,(data.interactiveAt||0)-now());
   const safeRead=()=>{try{return JSON.parse(sessionStorage.getItem(storageKey)||'null');}catch(_){return null;}};
   function save(){try{if(entry){const saved={...entry,commandSeq:sequence};sessionStorage.setItem(storageKey,JSON.stringify(saved));if(entry.resumeToken){const registry=readRegistry();registry[entry.roomCode]={...saved,updatedAt:Date.now()};for(const [code,value]of Object.entries(registry))if(Date.now()-value.updatedAt>86400000)delete registry[code];localStorage.setItem(registryKey,JSON.stringify(registry));}}else sessionStorage.removeItem(storageKey);}catch(_){}}
   function status(text,kind='recovering'){
@@ -36,8 +38,8 @@
   }
   function renderHistory(){
     const box=node('chatBox'),filter=node('historyFilter').value||'all';
-    const presenting=lastSnapshot?.presentation&&now()<lastSnapshot.interactiveAt;
-    const filtered=events.filter(event=>!(presenting&&event.hand===lastSnapshot.game?.handNumber&&['street','payout','result'].includes(event.kind))&&(filter==='all'||(filter==='chat'?['chat','phrase'].includes(event.kind):!['chat','phrase'].includes(event.kind))));
+    const presenting=lastSnapshot?.presentation&&presentationRemaining(lastSnapshot)>0;
+    const filtered=events.filter(event=>!(presenting&&event.hand===lastSnapshot.game?.handNumber&&!event.runout&&['street','payout','result'].includes(event.kind))&&(filter==='all'||(filter==='chat'?['chat','phrase'].includes(event.kind):!['chat','phrase'].includes(event.kind))));
     const nearBottom=(box.scrollHeight||0)-(box.scrollTop||0)-(box.clientHeight||0)<70;
     box.innerHTML=filtered.slice(-historyLimit).map(event=>{
       const time=new Date(event.time).toLocaleTimeString('zh-CN',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -92,7 +94,7 @@
   function draw(force=false){
     if(stopped)return;
     const data=lastSnapshot;if(!data)return;
-    const state=data.game,remaining=Math.max(0,(data.interactiveAt||0)-now());
+    const state=data.game,remaining=presentationRemaining(data);
     const progress=data.presentation?Math.max(0,Math.min(1,(now()-data.presentation.startedAt)/Math.max(1,data.presentation.duration))):1;
     const key=`${data.version}-${wsConnected}-${!!pending}-${remaining>0}-${Math.floor(progress*8)}`;
     if(!force&&paintKey===key){updateClock();return;}paintKey=key;
@@ -100,7 +102,9 @@
     window.RiverTable?.layout(data,remaining);
     if(!state){
       lobbyLeague=data.league||null;
-      node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=!lobbyLeague;
+      waitingRoom=data.waiting||null;
+      node('leagueWaitHeader').hidden=!lobbyLeague;
+      node('leagueReadyState').hidden=!waitingRoom;
       if(lobbyLeague){
         node('waitScreen').dataset.league=lobbyLeague.mode;
         node('leagueWaitMode').textContent=lobbyLeague.mode==='team'?'联赛 · 团队赛':'联赛 · 个人赛';
@@ -166,8 +170,14 @@
   function updateClock(){
     const state=lastSnapshot?.game;if(!state)return;
     window.RiverTable?.clock(lastSnapshot,now(),!!pending||!wsConnected);
-    const remaining=Math.max(0,(lastSnapshot.interactiveAt||0)-now());
-    if(remaining>0&&lastSnapshot.presentation?.timeline){const p=lastSnapshot.presentation,elapsed=now()-p.startedAt,next=p.timeline.steps.find(step=>step.at>elapsed);node('actionHint').textContent=elapsed<p.timeline.showHandsMs?`争池手牌已亮 · ${((p.timeline.showHandsMs-elapsed)/1000).toFixed(1)} 秒后开牌`:next?`${((next.at-elapsed)/1000).toFixed(1)} 秒后揭晓下一阶段`:`停留看牌 · ${(remaining/1000).toFixed(1)} 秒后结算`;return;}
+    const remaining=presentationRemaining(lastSnapshot);
+    if(remaining>0&&lastSnapshot.presentation?.timeline){
+      const p=lastSnapshot.presentation,elapsed=now()-p.startedAt,next=p.timeline.steps.find(step=>step.at>elapsed);
+      node('actionHint').textContent=elapsed>=p.timeline.duration?'正在公布分池':
+        elapsed<p.timeline.showHandsMs?`争池手牌已亮 · ${((p.timeline.showHandsMs-elapsed)/1000).toFixed(1)} 秒后开牌`:
+        next?`${((next.at-elapsed)/1000).toFixed(1)} 秒后揭晓下一阶段`:`停留看牌 · ${(remaining/1000).toFixed(1)} 秒后结算`;
+      return;
+    }
     if(remaining>0){node('actionHint').textContent=`${lastSnapshot.presentation?'正在发牌':'正在确认上一操作'} · ${(remaining/1000).toFixed(1)} 秒后继续`;return;}
     if(!wsConnected){node('actionHint').textContent='正在恢复连接，暂时不能操作';return;}
     if(pending){node('actionHint').textContent='操作已发送，正在确认；请勿重复点击';return;}
@@ -253,8 +263,8 @@
     const saved=safeRead(),known=readRegistry()[code];
     const resume=saved?.roomCode===code?saved:known;
     entry=fromLeague||!resume?{roomCode:code,isHost:host}:resume;sequence=entry.commandSeq||0;
-    lobbyLeague=null;delete node('waitScreen').dataset.league;
-    node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=true;
+    lobbyLeague=waitingRoom=null;delete node('waitScreen').dataset.league;
+    node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=node('waitTeamCounts').hidden=true;
     roomCode=code;isHost=host;mySeatId=host?0:-1;seats=[];wsConnected=false;showWaitScreen();setConnectionStatus('正在连接房间…');lastReceived=0;connect();
   }
   function leave({reload=true,permanent=false}={}){intentional=true;stopped=true;save();raw({type:'leaveRoom',permanent});clearTimeout(reconnectTimer);if(permanent&&entry){try{const registry=readRegistry();delete registry[entry.roomCode];localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}}entry=null;save();window.RiverTable?.stop();ws?.close();if(reload)location.href=location.pathname;}
@@ -276,7 +286,7 @@
   sendChat=()=>{const text=node('chatInput').value.trim();if(!text)return;command('chat',{text});node('chatInput').value='';};
   sendQuickChat=index=>{const phrase=lastSnapshot?.packs?.phrases[index];if(phrase)command('phrase',{phraseId:phrase.id});};
   renderChat=renderHistory;backToHome=()=>leave();node('leaveBtn').onclick=()=>leave();
-  node('readyBtn').onclick=()=>command('ready');
+  node('readyBtn').onclick=()=>command('ready',{rulesRevision:waitingRoom?.rulesRevision});
   node('historyFilter').onchange=renderHistory;
   node('loadEarlierBtn').onclick=()=>{historyLimit+=100;renderHistory();};
   node('exportHistoryBtn').onclick=()=>{
@@ -316,7 +326,7 @@
         history.replaceState(null,'',location.pathname);begin(table.code,table.host,true);return;
       }
     }catch(error){
-      if(error.status===401){location.replace('/account.html');return;}
+      if(error.status===401){location.reload();return;}
       status(error.message,'error');
     }
     const saved=safeRead(),match=location.hash.match(/room=(\d{6})/);

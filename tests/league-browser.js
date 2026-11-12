@@ -28,7 +28,7 @@ async function main() {
     }
     const change = (page, action, code, fields = {}, status) => api(page, '/api/league', { action, code, ...fields }, status);
     const detail = (page, code) => api(page, '/api/league?code=' + code);
-    const idle = page => page.waitForFunction(() => wsConnected && !RiverSession.getDiagnostics().pending);
+    const idle = page => page.waitForFunction(() => typeof wsConnected !== 'undefined' && wsConnected && !RiverSession.getDiagnostics().pending);
     const settings = async (page, id, value) => {
       await page.locator('#' + id).selectOption(value);
       await idle(page);
@@ -47,15 +47,15 @@ async function main() {
       await page.waitForURL('**/account.html');
       return page;
     }
-    async function signIn(page, index, register = false) {
+    async function signIn(page, index, register = false, destination = base + '/') {
       const form = page.locator('#accountForm');
       if (register) await page.locator('#accountToggle').click();
       await form.locator('[name=number]').fill('00' + index);
       await form.locator('[name=password]').fill('7');
       if (register) await form.locator('[name=confirmation]').fill('7');
       await form.locator('#accountSubmit').click();
-      await page.waitForURL(base + '/');
-      await page.locator('#homeProfile').waitFor();
+      if (destination) await page.waitForURL(destination);
+      if (destination === base + '/') await page.locator('#homeProfile').waitFor();
     }
     const host = await gatedPage(1);
     await api(host, '/api/account/register', { number: '001', password: '7', confirmation: '8' }, 400);
@@ -111,7 +111,23 @@ async function main() {
     await pages[1].getByLabel('联赛房间号').fill(code);
     await pages[1].getByRole('button', { name: '加入联赛' }).click();
     await pages[1].getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
-    for (const page of pages.slice(2)) await change(page, 'join', code);
+    await host.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: async url => { window.copiedInvite = url; } } });
+    });
+    await host.getByRole('button', { name: '复制联赛邀请' }).click();
+    const invite = await host.evaluate(() => window.copiedInvite);
+    assert.equal(invite, base + '/club.html?league=' + code);
+    const invited = pages[2];
+    await invited.context().clearCookies();
+    await invited.goto(invite);
+    await invited.getByLabel('访问密码').fill(gate);
+    await invited.getByRole('button', { name: '验证并进入' }).click();
+    await invited.waitForURL(url => url.pathname === '/account.html' && url.searchParams.get('next') === '/club.html?league=' + code);
+    await signIn(invited, 3, false, invite);
+    await invited.getByRole('heading', { name: '联赛邀请' }).waitFor();
+    await invited.getByRole('button', { name: '加入联赛' }).click();
+    await invited.getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
+    for (const page of pages.slice(3)) await change(page, 'join', code);
     for (const [index, page] of pages.slice(0, 4).entries()) await change(page, 'createTeam', code, { name: '队伍' + (index + 1) });
     let league = await detail(host, code);
     const firstTeam = league.teams[0].id;
@@ -144,13 +160,31 @@ async function main() {
     await api(pages[4], '/api/league?match=invalid', null, 404);
     await enter(pages[1], first.matchId);
     await enter(pages[4], first.matchId);
-    await host.locator('#startBtn').click();
-    await host.getByText('团队场至少需要两支队伍，且各队上场人数必须相同').first().waitFor();
+    await host.locator('#waitTeamCounts').filter({ hasText: '队伍1 2 人 · 队伍2 1 人' }).waitFor();
+    assert.equal(await host.locator('#startBtn').isDisabled(), true);
+    await host.locator('#leagueReadyState').filter({ hasText: '各队上场人数必须相同' }).waitFor();
+    await send(host, 'startGame');
+    assert.equal(await host.evaluate(() => g), null);
     await pages[4].evaluate(() => RiverSession.leave({ permanent: true }));
     await host.waitForFunction(() => seats.filter(Boolean).length === 2);
     await enter(pages[2], first.matchId);
-    await enter(pages[3], first.matchId);
+    const directGuest=pages[3],matchPath='/?leagueMatch='+first.matchId;
+    await directGuest.context().clearCookies();
+    await directGuest.goto(base+matchPath);
+    await directGuest.getByLabel('访问密码').fill(gate);
+    await directGuest.getByRole('button',{name:'验证并进入'}).click();
+    await directGuest.waitForURL(url=>url.pathname==='/account.html'&&url.searchParams.get('next')===matchPath);
+    await signIn(directGuest,4,false,null);
+    await idle(directGuest);
+    await directGuest.locator('#readyBtn').click();
+    await idle(directGuest);
     await settings(host, 'deckModeSel', 'short');
+    for (const guest of pages.slice(1, 4)) {
+      await guest.locator('#waitRuleSummary').filter({ hasText: '36 张短牌' }).waitFor();
+      await guest.locator('#leagueReadyState').filter({ hasText: '规则已更新' }).waitFor();
+      await guest.locator('#readyBtn').click();
+      await idle(guest);
+    }
     await host.locator('#startBtn').click();
     await host.waitForFunction(() => g?.handNumber === 1);
     for (let index = 0; index < 3; index++) await takeAction(pages.slice(0, 4), 'fold');
@@ -187,6 +221,9 @@ async function main() {
     await settings(memberHost, 'allowBuyInSel', 'yes');
     await settings(memberHost, 'deckModeSel', 'standard');
     await settings(memberHost, 'bigBlindSel', '50');
+    await host.locator('#waitRuleSummary').filter({ hasText: '1 倍底注 50' }).waitFor();
+    await host.locator('#readyBtn').click();
+    await idle(host);
     await memberHost.locator('#startBtn').click();
     await memberHost.waitForFunction(() => g?.handNumber === 1);
     await takeAction(pages.slice(0, 2), 'allin', memberHost);

@@ -14,7 +14,7 @@ const {passwordRecord}=require('../access');
     await context.addInitScript(()=>localStorage.setItem('river_audio',JSON.stringify({music:false,sfx:false})));
     const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
     await page.goto(base+(room?'#room='+room:''));await page.getByLabel('访问密码').fill(password);await page.getByRole('button',{name:'验证并进入'}).click();
-    if(room){await page.waitForFunction(()=>mySeatId>0);await page.locator('#readyBtn').click();}
+    if(room){await page.waitForFunction(()=>typeof mySeatId!=='undefined'&&mySeatId>0);await page.locator('#readyBtn').click();}
     else{await page.locator('#createBtn').click();await page.locator('#waitTip').filter({hasText:'房间已创建'}).waitFor();await page.locator('#allowBuyInSel').selectOption('yes');await page.waitForFunction(()=>!RiverSession.getDiagnostics().pending);}
     return page;
   }
@@ -30,7 +30,7 @@ const {passwordRecord}=require('../access');
     const revision=room.game.revision;await act(guest,'call');assert.ok(room.game.revision>revision);checks.push('guest action progresses while host page is frozen');
     await cdp.send('Page.setWebLifecycleState',{state:'active'});await host.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
     await host.waitForFunction(rev=>g.revision===rev,room.game.revision);checks.push('background host restores latest snapshot');
-    assert.match(await third.locator('#actionAnnouncement').textContent(),/跟注 CALL/);assert.ok((await third.locator('.player-action').allTextContents()).some(t=>t.includes('跟注 CALL')));checks.push('persistent per-player action and large announcement');
+    assert.match(await third.locator('#actionAnnouncement').textContent(),/跟注 \d+/);assert.ok((await third.locator('.player-action').allTextContents()).some(t=>/跟注\s*\d+/.test(t)));checks.push('persistent per-player action and large announcement');
     const before=await current(guest),cards=before.players[1].holeCards;
     await guest.reload();await guest.waitForFunction(()=>clientGameState?.handNumber===1&&mySeatId===1);
     assert.deepEqual((await current(guest)).players[1].holeCards,cards);checks.push('reload resumes same seat and cards');

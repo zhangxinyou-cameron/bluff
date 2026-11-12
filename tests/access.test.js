@@ -8,7 +8,16 @@ const os = require('node:os');
 const path = require('node:path');
 const WebSocket = require('ws');
 const { server, wss, access } = require('../server');
-const { passwordRecord } = require('../access');
+const { passwordRecord, loginDestination } = require('../access');
+
+test('login destinations accept only recognized internal league and match links', () => {
+  assert.equal(loginDestination('/club.html?league=00012345'), '/club.html?league=00012345');
+  assert.equal(loginDestination('/?leagueMatch=12345678-abcd-abcd-abcd-123456789abc'), '/?leagueMatch=12345678-abcd-abcd-abcd-123456789abc');
+  for (const invalid of ['//example.invalid', 'https://example.invalid', '/\\example.invalid', '/club.html?league=00012345\n',
+    '/club.html?league=00012345&next=//example.invalid', '/api/reports', { toString: false }]) {
+    assert.equal(loginDestination(invalid), '/');
+  }
+});
 
 test('password protection covers HTTP, files, WebSockets and session revocation', async t => {
   const password = 'test-access-' + require('node:crypto').randomBytes(12).toString('hex');

@@ -47,7 +47,8 @@ input::placeholder { color: #819087; }
 .league-ready-state { color:var(--gold); font-size:12px; text-align:center; margin:0; }
 .wait-screen[data-league] .settings-panel { order:1; margin-top:16px; }
 .wait-screen[data-league] .seats { margin-bottom:12px; }
-.wait-screen[data-league] .btn-start:disabled { opacity:.55; cursor:default; }
+.wait-screen .wait-btn:disabled { opacity:.55; cursor:default; }
+.wait-team-counts { align-self:center; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:6px 10px; margin:0 0 8px; text-align:center; overflow-wrap:anywhere; }
 .next-hand-panel { margin-top:24px; padding:22px; border:1px solid #526548; border-radius:10px; background:#263a28; }
 .next-hand-status { font-size:12px; color:#c8d4bc; line-height:1.8; margin:0 0 14px; }
 .confirmation-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:18px; }

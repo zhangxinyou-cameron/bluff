@@ -1,12 +1,20 @@
 const assert=require('node:assert/strict'),{chromium}=require('playwright');
+const fs=require('node:fs/promises');
 const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=require('../access');
 (async()=>{
   const password='runout-browser-only';access.configure(await passwordRecord(password));roomManager.configureTimings({deal:80,action:40,street:80});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}/`;
   const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'}),errors=[],idle=p=>p.waitForFunction(()=>!RiverSession.getDiagnostics().pending);
-  async function open(code){const c=await browser.newContext({viewport:code?{width:390,height:844}:{width:1280,height:800}});await c.addInitScript(()=>localStorage.setItem('river_audio',JSON.stringify({music:false,sfx:false})));const p=await c.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base+(code?'#room='+code:''));await p.getByLabel('访问密码').fill(password);await p.getByRole('button',{name:'验证并进入'}).click();await p.waitForFunction(()=>!!window.RiverSession);
+  const traces=new WeakMap();
+  async function open(code){const c=await browser.newContext({viewport:code?{width:390,height:844}:{width:1280,height:800}});await c.addInitScript(()=>localStorage.setItem('river_audio',JSON.stringify({music:false,sfx:false})));const p=await c.newPage();p.on('pageerror',e=>errors.push(e.message));const trace=[];traces.set(p,trace);
+    p.on('websocket',socket=>socket.on('framereceived',frame=>trace.push(JSON.parse(frame.payload))));
+    await p.goto(base+(code?'#room='+code:''));await p.getByLabel('访问密码').fill(password);await p.getByRole('button',{name:'验证并进入'}).click();await p.waitForFunction(()=>!!window.RiverSession);
     if(code){await p.waitForFunction(()=>wsConnected&&mySeatId>0);await p.locator('#readyBtn').click();await idle(p);}else{await p.locator('#createBtn').click();await p.locator('#waitTip').filter({hasText:'房间已创建'}).waitFor();for(const [id,v]of [['allowBuyInSel','yes'],['deckModeSel','standard'],['blindModeSel','standard']]){await p.locator('#'+id).selectOption(v);await idle(p);}}return p;}
   let host,pages,room;
+  function received(page,hand){
+    const events=traces.get(page).flatMap(message=>message.events||[]).filter(event=>event.hand===hand);
+    return [...new Map(events.map(event=>[event.id,event])).values()];
+  }
   async function act(action){const g=room.game,actor=pages[g.players[g.currentPlayerIndex].id],rev=g.revision;await actor.locator('.action-'+action).waitFor();await actor.locator('.action-'+action).click();await idle(actor);await host.waitForFunction(rev=>g.revision>rev,rev);}
   async function raise(multiple,level){
     const g=room.game,id=g.players[g.currentPlayerIndex].id,page=pages[id],rev=g.revision,amount=g.currentBet*multiple;
@@ -34,12 +42,39 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
       for(let index=0;index<frames.length;index++){
         const lengths=frames[index];for(const page of pages)await page.waitForFunction(lengths=>{const root=document.getElementById('communityCards'),rows=[...root.querySelectorAll('.runout-board')],counts=rows.length?rows.map(r=>r.querySelectorAll('.card:not(.card-empty)').length):[root.querySelectorAll('.card:not(.card-empty)').length];return JSON.stringify(counts)===JSON.stringify(lengths);},lengths);
         assert.ok(Date.now()-started>=(index===0?0:5000+(index-1)*3000)-100);for(const page of pages)assert.equal(await page.locator('#resultScreen').isVisible(),false);
-        if(index===0){for(const page of pages){assert.equal(await page.locator('.player-card .hole-cards .card:not(.card-back)').count(),4);await page.locator('#actionAnnouncement').filter({hasText:'手牌已亮'}).waitFor();}await host.waitForTimeout(1500);await pages[1].reload();await pages[1].waitForFunction(()=>wsConnected&&clientGameState?.communityCards.length===0);assert.ok(Date.now()-started<5000);}
+        for(const page of pages){
+          const events=received(page,hand);
+          assert.equal(events.some(event=>event.kind==='payout'||event.kind==='result'),false);
+          assert.equal(events.filter(event=>event.kind==='street').length,index);
+          assert.ok(events.filter(event=>event.kind==='street').every(event=>event.runout&&event.count<=lengths[event.board]));
+        }
+        if(index===0){
+          for(const page of pages){assert.equal(await page.locator('.player-card .hole-cards .card:not(.card-back)').count(),4);await page.locator('#actionAnnouncement').filter({hasText:'手牌已亮'}).waitFor();}
+          const guest=pages[1],before=traces.get(guest).length;
+          await guest.evaluate(()=>ws.send(JSON.stringify({type:'history',afterEvent:0})));
+          const deadline=Date.now()+1000;
+          while(!traces.get(guest).slice(before).some(message=>message.type==='history')&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));
+          const history=traces.get(guest).slice(before).find(message=>message.type==='history');
+          assert.ok(history);
+          assert.equal(history.events.some(event=>event.hand===hand&&['street','payout','result'].includes(event.kind)),false);
+          const exporting=guest.waitForEvent('download');
+          await guest.locator('#exportHistoryBtn').click();
+          const download=await exporting, exported=await fs.readFile(await download.path(),'utf8');
+          const thisHand=exported.split('\n').filter(line=>line.includes(`第${hand}手`)).join('\n');
+          assert.doesNotMatch(thisHand,/翻牌 ·|转牌 ·|河牌 ·|分得|手结束/);
+          await guest.reload();await guest.waitForFunction(()=>wsConnected&&clientGameState?.communityCards.length===0);
+          assert.ok(Date.now()-started<5000);
+        }
         if(hand===1&&index===2){await pages[1].reload();await pages[1].waitForFunction(()=>wsConnected&&clientGameState?.communityCards.length===4);assert.equal(await pages[1].locator('#resultScreen').isVisible(),false);}
       }
       for(const page of pages)await page.locator('#resultScreen').waitFor({state:'visible'});assert.ok(Date.now()-started>=duration-100);roomManager.check(room);
+      for(const page of pages){
+        const events=received(page,hand);
+        assert.ok(events.some(event=>event.kind==='payout'));
+        assert.equal(events.filter(event=>event.kind==='result').length,1);
+      }
       if(hand===1){for(let id=0;id<2;id++){if(room.game.players[id].chips<2000){await pages[id].locator('#bankBtn').click();await pages[id].locator('#bankAmount').fill('2000');await pages[id].locator('#bankBorrowBtn').click();await idle(pages[id]);await pages[id].getByRole('button',{name:'关闭银行'}).click();}}for(const page of pages){await page.locator('#nextHandBtn').click();await idle(page);}await host.waitForFunction(()=>g.handNumber===2);}
     }
-    assert.deepEqual(errors,[]);console.log('Runout passed: real 3-second single/double board timelines, final holds, 2 clients, refresh recovery, 3-bet/4-bet labels and 3x/4x presets.');
+    assert.deepEqual(errors,[]);console.log('Runout passed: 2 clients, real single/double timelines, staged WebSocket history, export, refresh and final payouts.');
   }finally{await browser.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

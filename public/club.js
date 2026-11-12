@@ -58,7 +58,7 @@
     view.setAttribute('aria-busy', 'true');
     tell('');
     try { await work(); }
-    catch (error) { tell(error.message); }
+    catch (error) { if (error.status === 401) location.reload(); else tell(error.message); }
     finally { view.setAttribute('aria-busy', 'false'); busy = false; }
   }
 
@@ -75,7 +75,7 @@
     const result = await request('/api/league', { action, code: leagueCode, ...fields });
     if (result.deleted) location.replace(result.cleanupPending ? '/club.html?cleanup=pending' : '/club.html');
     else if (result.matchId) location.href = tableUrl(result.matchId);
-    else if (result.code && !leagueCode) location.href = leagueUrl(result.code);
+    else if (result.code && (!leagueCode || action === 'join')) location.href = leagueUrl(result.code);
     else await showLeague(true);
   }
 
@@ -144,6 +144,12 @@
     const join = form('加入联赛', [codeField('联赛房间号')], values => mutate('join', values));
     display(el('section', { className: 'club-form-page' }, buttonLink('返回联赛大厅', '/club.html', true),
       el('div', { className: 'club-panel' }, el('h1', {}, '加入联赛'), join)));
+  }
+
+  function showInvite() {
+    display(el('section', { className: 'club-form-page' },
+      panel('联赛邀请', muted('联赛房间号 ' + leagueCode),
+        action('加入联赛', () => run(() => mutate('join'))), buttonLink('返回联赛大厅', '/club.html', true))));
   }
 
   function standings(headers, rows) {
@@ -253,6 +259,8 @@
           el('div', {}, el('strong', {}, seat.name), el('small', {}, seat.host ? '房主' : seat.ready ? '已准备' : '未准备'))))
         : muted('等待玩家入座。')) : null,
       waiting ? muted(`${seats.length} / ${match.capacity || 4} 已入座`) : null,
+      waiting && match.lineup?.teams.length ? row(...match.lineup.teams.map(team => badge(`${team.name} ${team.count} 人`))) : null,
+      waiting && match.lineup?.balanced === false ? muted('团队场需要至少两队，各队上场人数相同。') : null,
       row(enter, canCancel ? action('中止比赛', () => {
         if (confirm('中止这场比赛并关闭牌桌？')) run(() => mutate('cancel'));
       }, true) : null));
@@ -309,7 +317,12 @@
     const expanded = [...view.querySelectorAll('details')].map(details => details.open);
     display(el('header', { className: 'club-hero' },
       row(badge(mode), badge(league.endedAt ? '已结算' : '进行中', !league.endedAt)), el('h1', {}, league.name),
-      muted(`房间号 ${league.code} · 每场至少 ${league.minHands} 手 · 上榜至少 ${league.minMatches} 场`)),
+      muted(`房间号 ${league.code} · 每场至少 ${league.minHands} 手 · 上榜至少 ${league.minMatches} 场`),
+      !league.endedAt ? row(action('复制联赛邀请', async () => {
+        const url = new URL(leagueUrl(league.code), location.origin).href;
+        try { await navigator.clipboard.writeText(url); tell('邀请链接已复制'); }
+        catch { prompt('复制联赛邀请链接', url); }
+      }, true)) : null),
       matchPanel, league.mode === 'team' ? teamsView(league) : null,
       el('div', { className: 'club-detail-columns' },
         el('div', {}, league.mode === 'team' ? showTeamRank(league) : null, personal,
@@ -368,10 +381,16 @@
       else if (identity.leagues && params.has('new')) showCreate();
       else if (identity.leagues && params.has('join')) showJoin();
       else if (leagueCode && identity.leagues) {
-        await showLeague(true);
+        try { await showLeague(true); }
+        catch (error) {
+          if (error.status !== 404 || !/^[0-9]{8}$/.test(leagueCode)) throw error;
+          showInvite();
+          return;
+        }
         setInterval(() => {
           if (!document.hidden && !busy) showLeague().catch(error => {
-            if (error.status === 404) location.replace('/club.html');
+            if (error.status === 401) location.reload();
+            else if (error.status === 404) location.replace('/club.html');
           });
         }, 2000);
       } else {
@@ -383,7 +402,6 @@
       }
     } catch (error) {
       display(el('h1', {}, '页面暂不可用'));
-      if (error.status === 401) location.replace('/account.html');
       throw error;
     }
   });

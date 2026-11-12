@@ -109,7 +109,7 @@ test('room connection and readiness regression', async t => {
     await until(() => host.elements.get('waitTip').textContent.includes('房间已创建'), 'host confirmation');
     roomCode = host.run('roomCode');
     assert.match(roomCode, /^\d{6}$/);
-    assert.equal(host.elements.get('startBtn').style.display, 'none');
+    assert.equal(host.elements.get('startBtn').disabled, true);
     host.run('maxPlayers = 6; toggleAI(3)');
   });
 
@@ -131,13 +131,19 @@ test('room connection and readiness regression', async t => {
     assert.equal(shared.elements.get('readyBtn').disabled, false);
   });
 
-  await t.test('ready clicks reach the host and all players; start appears only when everyone is ready', async () => {
+  await t.test('waiting room names unready players and only enables start after the current rules are accepted', async () => {
     manual.click('readyBtn');
     await until(() => host.run('seats[1].ready') && shared.run('seats[1].ready'), 'first ready synchronization');
-    assert.equal(host.elements.get('startBtn').style.display, 'none');
+    assert.equal(host.elements.get('startBtn').disabled, true);
+    assert.match(host.elements.get('leagueReadyState').textContent, /等待 .+ 准备/);
     assert.equal(manual.elements.get('readyBtn').disabled, true);
+    host.run("RiverSession.command('roomSettings',{settings:{...settings,bigBlind:50},maxPlayers,aiSlots})");
+    await until(() => !manual.elements.get('readyBtn').disabled && [manual,shared].every(client=>client.run('settings.bigBlind')===50), 'rule update clears readiness');
+    assert.equal(manual.elements.get('waitRuleSummary').textContent,host.elements.get('waitRuleSummary').textContent);
+    assert.match(manual.elements.get('leagueReadyState').textContent,/规则已更新/);
+    manual.click('readyBtn');
     shared.click('readyBtn');
-    await until(() => host.elements.get('startBtn').style.display === 'block' && shared.elements.get('readyBtn').disabled, 'all players ready');
+    await until(() => !host.elements.get('startBtn').disabled && shared.elements.get('readyBtn').disabled, 'all players ready');
     assert.match(shared.elements.get('waitTip').textContent, /已准备/);
   });
 
@@ -148,9 +154,9 @@ test('room connection and readiness regression', async t => {
     replacement.run('window.onload()');
     await until(() => replacement.run('mySeatId') === 1 && shared.run('!!seats[1]'), 'replacement join');
     assert.equal(host.run('seats[1].ready'), false);
-    assert.equal(host.elements.get('startBtn').style.display, 'none');
+    assert.equal(host.elements.get('startBtn').disabled, true);
     replacement.click('readyBtn');
-    await until(() => host.run('seats[1].ready'), 'replacement readiness');
+    await until(() => !host.elements.get('startBtn').disabled, 'replacement readiness');
   });
 
   await t.test('host starts the game and guests receive their own cards', async () => {

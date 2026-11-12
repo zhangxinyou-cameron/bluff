@@ -167,6 +167,7 @@
     </div>
 
     <div class="seats" id="seats"></div>
+    <p id="waitTeamCounts" class="wait-team-counts" hidden></p>
     <p id="leagueReadyState" class="league-ready-state" hidden aria-live="polite"></p>
     <button class="wait-btn btn-ready" id="readyBtn">准备</button>
     <button class="wait-btn btn-start" id="startBtn" style="display:none">开始游戏</button>
@@ -250,6 +251,7 @@ let wsConnected = false;
 let connectionTimer = null;
 let isHost = false;
 let lobbyLeague = null;
+let waitingRoom = null;
 let mySeatId = -1;
 let roomCode = '';
 let myName = '玩家' + Math.floor(Math.random()*100);
@@ -418,8 +420,12 @@ function fmtCardSmall(c) {
 }
 
 function renderSeats() {
-  document.getElementById('waitRuleSummary').textContent=settings.allowBuyIn?`银行买入场 · 无破产淘汰 · 每人每手贷款 ${settings.loanPerHandLimit??'无限'} / 未还本金上限 ${settings.loanTotalLimit??'无限'} · 净筹码排名`:'淘汰赛 · 不允许中途买入，按筹码及出局先后排名';
-  document.getElementById('waitRuleSummary').textContent+=' · '+(settings.showWinRate===false?'不显示胜率':'显示胜率');
+  const deck={auto:'自动牌制（4 人及以下短牌）',short:'36 张短牌',standard:'52 张标准牌'}[settings.deckMode||'auto'];
+  const blinds={auto:'底注随牌制',ante:'全员底注＋庄家盲注',position:'下家 1 倍／再下家半倍',standard:'大小盲半倍／1 倍'}[settings.blindMode||'auto'];
+  const buyIn=settings.allowBuyIn?`允许贷款买入 · 每手上限 ${settings.loanPerHandLimit??'无限'} · 未还本金上限 ${settings.loanTotalLimit??'无限'}`:
+    `淘汰赛 · 结算人数门槛 ${settings.minPlayers} 人`;
+  document.getElementById('waitRuleSummary').textContent=
+    `${deck} · ${blinds} · 1 倍底注 ${settings.bigBlind} · 初始筹码 ${settings.initChips} · ${buyIn} · ${settings.showWinRate===false?'不显示胜率':'显示胜率'} · 跑马间隔 ${(settings.runoutDelayMs??3000)/1000} 秒`;
   let html = '';
   for (let i = 0; i < maxPlayers; i++) {
     const s = seats[i];
@@ -451,16 +457,18 @@ function renderSeats() {
   const allHumanReady = humanSeats.every(s => s.ready || s.isHost);
   if (isHost) {
     const totalPlayers = seats.filter(s=>s&&s.connected!==false).length + Object.keys(aiSlots).filter(k=>aiSlots[k] && !seats[k]).length;
-    const canStart = wsConnected && allHumanReady && totalPlayers >= 2;
+    const canStart = wsConnected && (waitingRoom?.canStart ?? (allHumanReady && totalPlayers >= 2));
     const start = document.getElementById('startBtn');
-    start.style.display = lobbyLeague || canStart ? 'block' : 'none';
-    start.disabled = !!lobbyLeague && !canStart;
+    start.style.display = waitingRoom || canStart ? 'block' : 'none';
+    start.disabled = !canStart;
   }
-  if(lobbyLeague){
-    const readyCount=humanSeats.filter(s=>s.ready||s.isHost).length;
-    const text=humanSeats.length<2?'至少需要 2 人入座':!humanSeats.some(s=>s.isHost)?'等待房主进入':
-      allHumanReady?'全员已准备，房主可以开始':'等待其他玩家准备';
-    document.getElementById('leagueReadyState').textContent=`${readyCount}/${humanSeats.length} 已准备 · ${text}`;
+  const teams=document.getElementById('waitTeamCounts');
+  teams.hidden=!waitingRoom?.teams.length;
+  if(!teams.hidden)teams.textContent=waitingRoom.teams.map(team=>`${team.name} ${team.count} 人`).join(' · ');
+  if(waitingRoom){
+    const text=waitingRoom.canStart?'全员已准备，房主可以开始':waitingRoom.blockers.join(' · ');
+    const rules=waitingRoom.rulesRevision&&waitingRoom.awaiting.length?' · 规则已更新，请确认后准备':'';
+    document.getElementById('leagueReadyState').textContent=`${waitingRoom.ready}/${waitingRoom.players} 已准备 · ${text}${rules}`;
   }
   const readyBtn = document.getElementById('readyBtn');
   const seat = seats[mySeatId];

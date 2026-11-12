@@ -7,6 +7,13 @@ const COOKIE = 'river_session';
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const ATTEMPT_MS = 15 * 60 * 1000;
 
+function loginDestination(url) {
+  if (typeof url !== 'string' || /[\r\n]/.test(url)) return '/';
+  if (url === '/club.html' || /^\/club\.html\?league=[0-9]{8}$/.test(url)) return url;
+  if (/^\/\?leagueMatch=[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(url)) return url;
+  return '/';
+}
+
 async function passwordRecord(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = (await scrypt(password, salt, 64)).toString('hex');
@@ -77,7 +84,8 @@ class AccessControl {
   }
   async handle(req, res) {
     const pathname = req.url.split('?')[0];
-    if (['/', '/login', '/auth/login'].includes(pathname) && req.method === 'POST') {
+    const destination = loginDestination(req.url);
+    if ((['/', '/login', '/auth/login'].includes(pathname) || destination !== '/') && req.method === 'POST') {
       if (!this.record) { this.sendGate(res, 503, '服务尚未完成密码设置'); return true; }
       if (req.headers.origin) {
         try {
@@ -121,7 +129,7 @@ class AccessControl {
       const token = crypto.randomBytes(32).toString('base64url');
       this.sessions.set(crypto.createHash('sha256').update(token).digest('hex'), now + SESSION_MS);
       const secure = req.socket.encrypted || (local && String(req.headers['x-forwarded-proto']).split(',')[0].trim() === 'https');
-      res.writeHead(303, { Location: '/', 'Set-Cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MS/1000}${secure ? '; Secure' : ''}`, 'Cache-Control': 'no-store' });
+      res.writeHead(303, { Location: destination, 'Set-Cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MS/1000}${secure ? '; Secure' : ''}`, 'Cache-Control': 'no-store' });
       res.end();
       return true;
     }
@@ -134,10 +142,10 @@ class AccessControl {
       return true;
     }
     if (this.authenticated(req)) return false;
-    if (req.method === 'GET' && (pathname === '/' || pathname === '/login')) this.sendGate(res);
+    if (req.method === 'GET' && (pathname === '/' || pathname === '/login' || destination !== '/')) this.sendGate(res);
     else { res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('请先验证访问密码'); }
     return true;
   }
 }
 
-module.exports = { AccessControl, passwordRecord, promptStartupPassword, hiddenQuestion };
+module.exports = { AccessControl, passwordRecord, promptStartupPassword, hiddenQuestion, loginDestination };
