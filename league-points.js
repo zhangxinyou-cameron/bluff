@@ -11,7 +11,7 @@ function rank(rows, minimum, compare) {
   return [...qualified, ...rows.filter(row => row.matches < minimum).sort(compare)];
 }
 
-function aggregate(league, matches) {
+function aggregate(league, matches, netPoints = false) {
   const playerRows = new Map();
   const teamRows = new Map(league.teams.map(team => [team.id, {
     id: team.id, name: team.name, matches: 0, points: 0, bb: 0, profit: 0,
@@ -19,22 +19,24 @@ function aggregate(league, matches) {
   }]));
   const ledger = [];
   for (const match of matches) {
-    const counted = match.status === 'completed' && !match.voidReason && match.hands >= league.minHands;
+    const counted = match.status === 'completed' && !match.voidReason && match.hands >= (netPoints ? 1 : league.minHands);
     if (!counted) continue;
     const teams = new Map();
     for (const player of match.players) {
+      if (netPoints && !player.hands) continue;
       if (!playerRows.has(player.uid)) playerRows.set(player.uid, { uid: player.uid, matches: 0, hands: 0, profit: 0, bb: 0, points: 0, metrics: empty() });
       const row = playerRows.get(player.uid);
       row.name = player.name;
       row.avatar = player.avatar;
       row.matches++;
-      for (const field of ['hands', 'profit', 'bb', 'points']) row[field] += player[field];
+      for (const field of ['hands', 'profit', 'bb']) row[field] += player[field];
+      row.points += netPoints ? player.bb : player.points;
       for (const key of Object.keys(row.metrics)) {
         row.metrics[key].total += player.metrics[key].total;
         row.metrics[key].samples += player.metrics[key].samples;
       }
-      if (!player.teamId) continue;
       const team = teamRows.get(player.teamId);
+      if (!team) continue;
       if (!teams.has(team.id)) teams.set(team.id, { id: team.id, bb: 0, profit: 0 });
       const appearance = teams.get(team.id);
       appearance.bb += player.bb;
@@ -50,6 +52,11 @@ function aggregate(league, matches) {
       row.matches++;
       row.bb += own.bb;
       row.profit += own.profit;
+      if (netPoints) {
+        own.points = own.bb;
+        row.points += own.points;
+        continue;
+      }
       let points = 0;
       for (const opponent of teams.values()) {
         if (opponent.id === own.id) continue;
@@ -77,7 +84,7 @@ function aggregate(league, matches) {
       mvp: eligible.filter(player => !close(player.bb - eligible[0].bb)).map(player => ({ ...player,
         name: playerRows.get(player.uid).name, bb100: 100 * player.bb / player.hands })) };
   });
-  for (const team of teams) {
+  for (const team of netPoints ? [] : teams) {
     const tied = teams.filter(other => other !== team && other.matches >= league.minMatches && Math.abs(team.average - other.average) < 1e-9);
     if (tied.length && [team, ...tied].every(a => [team, ...tied].every(b => a === b || a.headToHead[b.id]))) {
       const records = tied.map(other => team.headToHead[other.id]);

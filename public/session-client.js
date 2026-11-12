@@ -56,7 +56,7 @@
     if(data.game&&(data.game.handNumber!==previous?.handNumber||!PokerEngine.betting(data.game)||data.game.players[data.game.currentPlayerIndex]?.id!==data.seatId))raiseMode=false;
     lastVersion=data.version;lastSnapshot=data;clockOffset=data.serverTime-Date.now();wsConnected=true;retry=0;
     isHost=data.isHost;mySeatId=data.seatId;roomCode=data.roomCode;sequence=Math.max(sequence,data.commandSeq||0);save();
-    settings=data.settings;maxPlayers=data.maxPlayers;aiSlots=data.aiSlots;seats=data.seats;
+    settings=data.settings;maxPlayers=data.maxPlayers;aiSlots=data.aiSlots;seats=data.seats;lobbyLeague=data.league||null;
     g=isHost?data.game:null;clientGameState=data.game;
     window.RiverTable?.update(data);
     addEvents(data.events);
@@ -101,18 +101,15 @@
     node('activityPanel').hidden=false;node('connectionBanner').hidden=false;
     window.RiverTable?.layout(data,remaining);
     if(!state){
-      lobbyLeague=data.league||null;
       waitingRoom=data.waiting||null;
       node('leagueWaitHeader').hidden=!lobbyLeague;
       node('leagueReadyState').hidden=!waitingRoom;
       if(lobbyLeague){
-        node('waitScreen').dataset.league=lobbyLeague.mode;
-        node('leagueWaitMode').textContent=lobbyLeague.mode==='team'?'联赛 · 团队赛':'联赛 · 个人赛';
+        node('waitScreen').dataset.league='true';
         node('leagueWaitName').textContent=lobbyLeague.name;
         node('backToLeague').href='/club.html?league='+encodeURIComponent(lobbyLeague.code);
       }else delete node('waitScreen').dataset.league;
       showWaitScreen();
-      node('maxPlayersVal').textContent=maxPlayers;
       for(const [id,value]of[['bigBlindSel',settings.bigBlind],['initChipsSel',settings.initChips],['minPlayersSel',settings.minPlayers],['allowBuyInSel',settings.allowBuyIn?'yes':'no']])node(id).value=String(value);
       node('minPlayersSel').disabled=settings.allowBuyIn;
       node('showWinRateSel').value=settings.showWinRate===false?'no':'yes';node('showWinRateSel').disabled=!isHost;
@@ -250,7 +247,7 @@
     };
     clearTimeout(connectionTimer);connectionTimer=setTimeout(()=>{if(ws===socket&&!wsConnected){socket.close();}},12000);
   }
-  async function begin(code,host,fromLeague=false){
+  async function begin(code,host,freshJoin=false){
     if(identity?.profile){
       const name=node('nameInput').value.trim();
       if(name&&name!==identity.profile.name){
@@ -262,14 +259,14 @@
     g=null;clientGameState=null;lastSnapshot=null;lastVersion=-1;events.length=0;seen.clear();eventId=0;pending=null;sequence=0;stopped=false;retry=0;
     const saved=safeRead(),known=readRegistry()[code];
     const resume=saved?.roomCode===code?saved:known;
-    entry=fromLeague||!resume?{roomCode:code,isHost:host}:resume;sequence=entry.commandSeq||0;
+    entry=freshJoin||!resume?{roomCode:code,isHost:host}:resume;sequence=entry.commandSeq||0;
     lobbyLeague=waitingRoom=null;delete node('waitScreen').dataset.league;
-    node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=node('waitTeamCounts').hidden=true;
+    node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=true;
     roomCode=code;isHost=host;mySeatId=host?0:-1;seats=[];wsConnected=false;showWaitScreen();setConnectionStatus('正在连接房间…');lastReceived=0;connect();
   }
   function leave({reload=true,permanent=false}={}){intentional=true;stopped=true;save();raw({type:'leaveRoom',permanent});clearTimeout(reconnectTimer);if(permanent&&entry){try{const registry=readRegistry();delete registry[entry.roomCode];localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}}entry=null;save();window.RiverTable?.stop();ws?.close();if(reload)location.href=location.pathname;}
   createRoom=()=>begin(String(Math.floor(100000+Math.random()*900000)),true);
-  joinRoom=()=>{const code=node('roomCodeInput').value.trim();if(!/^\d{6}$/.test(code)){alert('请输入6位数字房间号');return;}begin(code,false);};
+  joinRoom=()=>{const code=node('roomCodeInput').value.trim();if(!/^\d{6}$/.test(code)){alert('请输入6位数字房间号');return;}begin(code,false,!!identity?.profile);};
   connectWS=()=>{if(!entry)entry={roomCode:roomCode||'100000',isHost};lastReceived=0;connect();};
   startGameHost=()=>command('startGame');
   scheduleAI=()=>{};syncAfterAction=()=>{};broadcast=()=>{};broadcastSeatsAll=()=>{};sendToPlayer=()=>{};
@@ -282,10 +279,10 @@
     const state=lastSnapshot?.game,p=state?.players.find(p=>p.id===mySeatId);if(!p)return;
     command('bank',{kind,amount:Number(node('bankAmount').value),handNumber:state.handNumber,bankVersion:p.bankVersion});
   };
-  broadcastSettings=()=>{if(isHost)command('roomSettings',{settings,maxPlayers,aiSlots});};
+  broadcastSettings=()=>{if(isHost)command('roomSettings',{settings,aiSlots});};
   sendChat=()=>{const text=node('chatInput').value.trim();if(!text)return;command('chat',{text});node('chatInput').value='';};
   sendQuickChat=index=>{const phrase=lastSnapshot?.packs?.phrases[index];if(phrase)command('phrase',{phraseId:phrase.id});};
-  renderChat=renderHistory;backToHome=()=>leave();node('leaveBtn').onclick=()=>leave();
+  renderChat=renderHistory;backToHome=()=>leave();node('leaveBtn').onclick=()=>leave({permanent:true});
   node('readyBtn').onclick=()=>command('ready',{rulesRevision:waitingRoom?.rulesRevision});
   node('historyFilter').onchange=renderHistory;
   node('loadEarlierBtn').onclick=()=>{historyLimit+=100;renderHistory();};

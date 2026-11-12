@@ -131,8 +131,9 @@ function cmpHand(a,b) {
     g.phase='pre_flop';g.betLevel=1; g.winners=[]; g.pots=[]; g.nextHandReady=[];g.showdownOccurred=false;
     for (const p of g.players) Object.assign(p, { holeCards: [], currentBet: 0, totalBet: 0,
       folded: !!p.disconnected||p.connected===false, allIn: false, handResult: null, handResults:null, isActive: p.chips>0&&!p.disconnected&&p.connected!==false,
-      lastAction:null,
+      lastAction:null, waitingForHand:false,
       chipsBeforeHand: p.chips, chipsAfterHand:null, acted: false, lastActionBet: null, showFolded: false });
+    for (const p of participating) p.hasPlayed=true;
     g.dealerIndex=nextIndex(g,g.dealerIndex,live);
     const headsUp = g.players.filter(live).length===2;
     if (g.blindRule!=='ante' && headsUp && g.handNumber>1 && g.players[nextIndex(g,g.dealerIndex,live)].id===g.lastBigBlindId) g.dealerIndex=nextIndex(g,g.dealerIndex,live);
@@ -302,7 +303,7 @@ function cmpHand(a,b) {
     const p=g.players.find(p=>p.id===seatId);
     if (!p || p.disconnected) return;
     p.disconnected=true;
-    if (betting(g)) {
+    if (betting(g) && p.isActive) {
       if (!p.allIn) p.folded=true;
       g.revision++;
       // Preserve the current player's turn when somebody else leaves.
@@ -325,6 +326,13 @@ function cmpHand(a,b) {
     const sorted=g.players.slice().sort(compare),ranked=[];
     sorted.forEach((p,i)=>ranked.push({...p,place:i>0&&compare(sorted[i-1],p)===0?ranked[i-1].place:i+1}));
     return ranked;
+  }
+  function sessionFinished(g,minPlayers) {
+    if(!g)return false;
+    if(g.allowBuyIn||g.phase==='tournament_over')return g.phase==='tournament_over';
+    const players=g.players.filter(p=>!p.removeAfterHand);
+    const funded=players.filter(p=>p.chips>0).length;
+    return funded<2||(players.length>minPlayers&&funded<=minPlayers);
   }
   function validLoanLimit(value){return value==null||Number.isSafeInteger(value)&&value>=0;}
   function loanAllowance(g,p){
@@ -363,7 +371,7 @@ function cmpHand(a,b) {
     g.phase='tournament_over';g.currentPlayerIndex=-1;g.nextHandReady=[];
   }
   function requestSessionEnd(g,seatId) {
-    if(!g||(!g.allowBuyIn&&!g.allowHostEnd)||seatId!==g.hostSeatId||g.phase==='tournament_over')return {ok:false,message:'只有房主可以提前结算买入场或联赛场'};
+    if(!g||(!g.allowBuyIn&&!g.allowHostEnd)||seatId!==g.hostSeatId||g.phase==='tournament_over')return {ok:false,message:'只有房主可以提前结算尚未结束的牌局'};
     if(g.endRequested)return {ok:true,duplicate:true};
     g.endRequested=true;g.revision++;
     if(!betting(g)&&g.phase!=='runout_vote')finalizeSession(g);
@@ -372,5 +380,5 @@ function cmpHand(a,b) {
   function canRequestPeek(p) {
     return !!p&&!p.disconnected&&p.connected!==false&&((p.folded&&p.holeCards?.length===2)||(!p.isActive&&p.chips===0));
   }
-  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,bankTransaction,requestSessionEnd,canRequestPeek,validLoanLimit,loanAllowance};
+  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,sessionFinished,bankTransaction,requestSessionEnd,canRequestPeek,validLoanLimit,loanAllowance};
 });

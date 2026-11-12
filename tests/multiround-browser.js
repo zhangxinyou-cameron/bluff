@@ -107,8 +107,6 @@ const { passwordRecord } = require('../access');
       await leaving.evaluate(()=>RiverSession.leave({reload:false,permanent:true}));
       await leaving.context().close();
       await host.waitForFunction(()=>seats[1]===null);
-      await host.locator('.mini-btn').filter({hasText:'+'}).click();
-      await host.locator('.mini-btn').filter({hasText:'+'}).click();
       await host.locator('#seats > .seat').nth(5).click();
       await host.locator('#startBtn').click();
       assert.deepEqual((await state(host)).players.map(p=>p.id),[0,2,5]);

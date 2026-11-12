@@ -49,3 +49,18 @@ test('six-dimensional results require enough hands and valid samples and can be 
   const { players } = aggregate(league, [first, second]);
   assert.deepEqual(players[0].values.calculation, { score: 50, samples: 20, observed: 10 });
 });
+
+test('net BB counts actual hands only and adds uneven team contributions without changing absentees', () => {
+  const league = { minHands: 5, minMatches: 1, teams: ['A', 'B', 'C'].map(id => ({ id, name: id })) };
+  const first = match('1', 20, [['a', 'A', 100, 0, 1], ['a2', 'A', -20, 0, 1], ['b', 'B', -100, 0, 1],
+    ['solo', null, 20, 0, 1], ['watcher', 'C', 0, 0, 0]], { hands: 1 });
+  const second = match('2', 50, [['a', 'A', -50, 0, 1], ['solo', null, 50, 0, 1]], { hands: 1 });
+  const initial = aggregate(league, [first], true), result = aggregate(league, [first, second], true);
+  assert.equal(result.players.some(row => row.uid === 'watcher'), false);
+  assert.deepEqual(result.players.find(row => row.uid === 'b'), initial.players.find(row => row.uid === 'b'));
+  assert.equal(result.players.find(row => row.uid === 'solo').points, 2);
+  assert.equal(result.teams.find(row => row.id === 'A').points, 3);
+  assert.equal(result.teams.find(row => row.id === 'A').average, 1.5);
+  assert.equal(result.teams.find(row => row.id === 'C').matches, 0);
+  assert.equal(result.ledger[1].teams.length, 1);
+});

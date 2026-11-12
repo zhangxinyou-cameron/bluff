@@ -102,12 +102,6 @@ small, .club-muted { color: var(--muted); }
 .club-form-page { width: min(100%, 46rem); margin: 0 auto; }
 .club-form-page form { margin-top: 1.3rem; }
 .club-form-page .club-details > div { margin-top: .7rem; }
-.club-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; border: 0; padding: 0; margin: 0; min-width: 0; }
-.club-mode-options legend { color: var(--muted); margin-bottom: .35rem; padding: 0; }
-.club-mode-option { display: flex; align-items: center; gap: .45rem; min-height: 50px; border: 1px solid var(--line); border-radius: .55rem; padding: .6rem; background: #13261d; cursor: pointer; }
-.club-mode-option input { width: 1rem; min-height: 0; margin: 0; accent-color: var(--gold); }
-.club-mode-option:has(input:checked) { border-color: var(--gold); color: var(--gold); background: #263728; }
-.club-mode-option:focus-within { outline: 2px solid var(--gold); outline-offset: 2px; }
 .club-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr)); gap: .85rem; margin: .85rem 0; }
 .club-panel { min-width: 0; padding: clamp(.8rem, 3vw, 1.25rem); margin-block: .8rem; border: 1px solid var(--line); border-radius: .8rem; background: var(--panel); overflow-wrap: anywhere; }
 .club-grid > .club-panel { margin: 0; }

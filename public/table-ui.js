@@ -55,9 +55,8 @@
     for(const id of ['tableDeckMode','deckModeSel']){el(id).value=value.settings.deckMode||'auto';el(id).disabled=!isHost||!!game&&!['hand_over','tournament_over'].includes(game.phase)||!wsConnected;}
     for(const id of ['tableBlindMode','blindModeSel']){el(id).value=value.settings.blindMode||'auto';el(id).disabled=!isHost||!!game&&game.phase!=='hand_over'||!wsConnected;}
     if(value.league&&game)for(const id of ['tableDeckMode','tableBlindMode'])el(id).disabled=true;
-    el('peekSettingsBtn').hidden=value.league?.mode==='team';
     el('managePlayersBtn').hidden=!isHost;el('closeRoomBtn').hidden=!isHost;el('bankBtn').hidden=!game?.allowBuyIn;el('finishSessionBtn').hidden=!isHost||(!game?.allowBuyIn&&!game?.allowHostEnd);
-    if(!game){el('sessionMode').textContent='牌桌设置';el('sessionStatus').textContent='暂时离桌保留原位30分钟 · 同一浏览器重新入房恢复';render(value,false);}
+    if(!game){el('sessionMode').textContent='牌桌设置';el('sessionStatus').textContent='最多 8 人 · 开局后仍可加入';render(value,false);}
     el('playWorkspace').classList.toggle('is-playing',next);document.body.classList.toggle('in-game',next);
     if(next!==playing){playing=next;if(next){el('historyFilter').value='chat';requestAnimationFrame(()=>el('playWorkspace').scrollIntoView({block:'start',behavior:'instant'}));}else if(game)requestAnimationFrame(()=>el('resultScreen').scrollIntoView({block:'start',behavior:'instant'}));}
   }
@@ -99,12 +98,13 @@
     el('socialPeekThreshold').textContent=selected&&!selected.isAI?'对方看牌门槛：'+thresholdText(selected.peekThreshold):'';
     el('socialAudience').textContent=socialTab==='phrases'?'语言包会发送给整桌朋友':socialTab==='peek'?'由这位玩家决定是否向你亮牌':'礼物将送到所选玩家座位';
     const request=data?.peekRequests?.find(r=>r.from===mySeatId&&r.to===target?.id);
-    const can=data?.league?.mode!=='team'&&!!game&&PokerEngine.canRequestPeek(me)&&game.phase!=='tournament_over'&&!!target&&!target.isAI&&!target.disconnected&&target.connected!==false&&!request;
+    const can=!!game&&PokerEngine.canRequestPeek(me)&&game.phase!=='tournament_over'&&!!target&&!target.isAI&&!target.disconnected&&target.connected!==false&&!request;
     el('requestPeekBtn').disabled=!can||!wsConnected||busy;
     el('peekHelp').textContent=request?request.status==='pending'?'申请已发送，等待对方答复。':'本手已向这位玩家申请过，可查看上方结果。':can?me.chips===0?'观战也可申请看牌，无筹码时小费填0；需对方同意。':'小费于本手结算后转账；对方拒绝或申请过期均不扣款。':'本手弃牌或无筹码观战时，可向在线真人申请看牌。';
     for(const button of el('giftButtons').querySelectorAll('button'))button.disabled=!selected||!wsConnected||busy;
     for(const button of el('phraseButtons').querySelectorAll('button'))button.disabled=!wsConnected||busy;
     el('kickPlayerBtn').hidden=!isHost;el('kickPlayerBtn').disabled=!el('socialTarget').value||!wsConnected;
+    el('kickPlayerBtn').textContent=selected?.isAI?'移除所选人机':'踢出所选玩家';
   }
   function setTab(tab,focus=false){
     if(!['gifts','phrases','peek'].includes(tab))return;socialTab=tab;

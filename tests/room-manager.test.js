@@ -5,7 +5,7 @@ const E=require('../public/poker-engine');
 function fixture(t,n=2,timings={}){
   const manager=new RoomManager(new Map(),{roster(){},remove(){}});manager.configureTimings({deal:0,street:0,runout:0,action:0,ai:0,...timings});t.after(()=>manager.dispose());
   const sockets=[];const code='123456';
-  function join(data={}){const ws={readyState:1,messages:[],send(s){this.messages.push(JSON.parse(s));},close(){this.readyState=3;}};manager.handle(ws,{type:'joinRoom',roomCode:code,seatId:sockets.length?-1:0,name:'P'+sockets.length,...data});sockets.push(ws);return ws;}
+  function join(data={}){const ws={uid:data.uid,readyState:1,messages:[],send(s){this.messages.push(JSON.parse(s));},close(){this.readyState=3;}};manager.handle(ws,{type:'joinRoom',roomCode:code,seatId:sockets.length?-1:0,name:'P'+sockets.length,...data});sockets.push(ws);return ws;}
   for(let i=0;i<n;i++)join();
   function command(ws,type,data={}){const person=manager.games.get(code)?.people.get(ws.seatId);manager.handle(ws,{type,requestId:'request-'+ws.seatId+'-'+(person?.commandSeq+1),commandSeq:person?.commandSeq+1,...data});return ws.messages.filter(m=>m.type==='ack').at(-1);}
   function start(){for(const ws of sockets.slice(1))command(ws,'ready');assert.ok(command(sockets[0],'startGame').ok);}
@@ -28,6 +28,83 @@ test('8 seats work, a ninth player is rejected, and authoritative snapshots hide
   const f=fixture(t,8);const ninth=f.join();assert.match(ninth.messages.at(-1).message,/最多支持8人/);f.sockets.pop();f.start();
   assert.equal(f.room.game.variant,'standard');
   for(const ws of f.sockets){const state=f.latest(ws).game;assert.equal(state.deck,undefined);for(const p of state.players)assert.equal(p.holeCards.length,p.id===ws.seatId?2:0);}
+});
+test('late entrants wait for the next hand, can free capacity, and reclaim the same account by UID',t=>{
+  const f=fixture(t);
+  const profiles=Array.from({length:8},(_,index)=>({uid:'uid'+index,name:'Late'+index,avatar:'default'}));
+  f.manager.accounts={byUid:new Map(profiles.map(profile=>[profile.uid,profile]))};
+  f.room.settings.allowBuyIn=true;
+  f.start();
+  const g=f.room.game,actor=g.players[g.currentPlayerIndex],rev=g.revision;
+  const late=f.join({uid:'uid0'}),initial=g.players.find(p=>p.id===late.seatId);
+  assert.equal(initial.chips,2000);
+  assert.equal(initial.waitingForHand,true);
+  assert.equal(initial.holeCards.length,0);
+  assert.equal(g.players[g.currentPlayerIndex],actor);
+  assert.equal(g.revision,rev);
+  while(E.betting(g))assert.ok(f.manager.act(f.room,g.players[g.currentPlayerIndex].id,'fold').ok);
+  const debt={kind:'borrow',amount:500,handNumber:g.handNumber,bankVersion:0};
+  assert.ok(f.command(late,'bank',debt).ok);
+  const others=profiles.slice(1,6).map(profile=>f.join({uid:profile.uid}));
+  const full=f.join({uid:'uid6'});
+  assert.match(full.messages.at(-1).message,/最多支持8人/);
+  f.manager.leave(late,true);
+  const replacement=f.join({uid:'uid6'});
+  assert.ok(replacement.seatId>=8);
+  f.manager.leave(others[0],true);
+  const returned=f.join({uid:'uid0'});
+  assert.equal(returned.seatId,late.seatId);
+  assert.deepEqual([initial.chips,initial.bankDebt],[2500,500]);
+  assert.equal(g.players.filter(p=>p.connected!==false&&!p.disconnected).length,8);
+  f.manager.check(f.room);
+  for(const ws of [f.sockets[0],f.sockets[1],...others.slice(1),replacement,returned])assert.ok(f.command(ws,'handReady',{handNumber:1}).ok);
+  assert.equal(g.handNumber,2);
+  assert.equal(initial.holeCards.length,2);
+  assert.equal(initial.waitingForHand,false);
+});
+
+test('kicking an all-in bot preserves its pending pot claim and removes its account after settlement',t=>{
+  const f=fixture(t,2,{runout:1000});
+  f.room.aiSlots[2]=true;
+  f.room.settings.blindMode='standard';
+  f.start();
+  const g=f.room.game,bot=g.players.find(player=>player.isAI);
+  while(E.betting(g)&&!bot.allIn){
+    const actor=g.players[g.currentPlayerIndex];
+    assert.ok(f.manager.act(f.room,actor.id,actor===bot?'allin':actor.currentBet<g.currentBet?'call':'check').ok);
+  }
+  assert.equal(bot.allIn,true);
+  assert.ok(f.command(f.sockets[0],'kick',{target:bot.id}).ok);
+  assert.ok(g.players.includes(bot));
+  assert.equal(bot.folded,false);
+  while(E.betting(g))assert.ok(f.manager.act(f.room,g.players[g.currentPlayerIndex].id,'call').ok);
+  if(g.phase==='runout_vote')f.manager.finishVote(f.room,false,'测试');
+  assert.equal(g.pot,0);
+  f.room.blockedUntil=0;
+  if(f.room.runoutHistory)f.room.runoutHistory.startedAt-=10_000;
+  f.manager.publish(f.room);
+  assert.equal(g.players.includes(bot),false);
+  assert.equal(g.bankLog.some(entry=>entry.seatId===bot.id),false);
+  f.manager.check(f.room);
+});
+
+test('an authenticated host may leave mid-hand and reclaim the unchanged stack without reopening the folded hand',t=>{
+  const f=fixture(t,3),host=f.sockets[0];
+  const profile={uid:'owner',name:'Host',avatar:'default'};
+  f.manager.accounts={byUid:new Map([[profile.uid,profile]])};
+  host.uid=profile.uid;
+  Object.assign(f.room.people.get(0),profile);
+  f.start();
+  const game=f.room.game,seat=game.players[0],chips=seat.chips;
+  f.manager.leave(host,true);
+  assert.equal(f.manager.games.get(f.room.code),f.room);
+  assert.equal(seat.folded,true);
+  const returned=f.join({uid:profile.uid});
+  assert.equal(returned.seatId,0);
+  assert.equal(seat.chips,chips);
+  assert.equal(seat.waitingForHand,true);
+  assert.equal(seat.folded,true);
+  f.manager.check(f.room);
 });
 test('transient disconnection retains both host and guest seats; token resumes same cards and balance',t=>{
   const f=fixture(t);f.start();const g=f.room.game,before=JSON.stringify(g.players[1].holeCards),token=f.sockets[1].messages.find(m=>m.type==='joined').resumeToken;

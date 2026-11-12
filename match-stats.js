@@ -88,21 +88,25 @@ class MatchStats {
     const match = room.leagueMatch;
     room.statistics = {
       id: match?.id || randomUUID(), startedAt: Date.now(), hands: 0, rules: { ...room.settings },
-      players: new Map(humans.map(person => [person.id, {
-        uid: person.uid, name: person.name, avatar: person.avatar, teamId: match?.teams?.[person.uid] || null,
-        hands: 0, metrics: empty()
-      }]))
+      players: new Map()
     };
     if (match) this.save({ ...match, status: 'running', startedAt: room.statistics.startedAt,
       participantUids: humans.map(person => person.uid), rules: room.statistics.rules });
   }
 
-  startHand(room) {
+  startHand(room, teamForUid = () => null) {
     if (!room.statistics) return;
     const g = room.game;
+    const participating = new Set(g.players.filter(p => p.holeCards.length === 2).map(p => p.id));
+    for (const seat of participating) {
+      const person = room.people.get(seat);
+      if (!person?.uid || room.statistics.players.has(seat)) continue;
+      room.statistics.players.set(seat, { uid: person.uid, name: person.name, avatar: person.avatar,
+        teamId: teamForUid(person.uid) ?? null, hands: 0, metrics: empty() });
+    }
     room.statistics.hand = {
       number: g.handNumber, forced: new Map(g.players.map(p => [p.id, p.totalBet])),
-      participating: new Set(g.players.filter(p => p.holeCards.length === 2).map(p => p.id)),
+      participating,
       voluntary: new Map(), lastPressure: null, lockBoard: null
     };
   }
@@ -172,7 +176,7 @@ class MatchStats {
     if (prior?.status === 'completed') { room.reportId = stats.id; return; }
     if (prior && prior.status !== 'running') return;
     const game = room.game;
-    const standings = E.standings(game);
+    const standings = E.standings({ ...game, players: game.players.filter(p => stats.players.get(p.id)?.hands) });
     const players = [];
     for (const player of standings) {
       const row = stats.players.get(player.id);
@@ -180,12 +184,14 @@ class MatchStats {
       const profit = player.chips - player.bankDebt - player.initialChips;
       const values = scores(row.metrics, row.hands);
       const tied = standings.filter(other => other.place === player.place).length;
-      const points = 100 * (standings.length - player.place - (tied - 1) / 2) / Math.max(1, standings.length - 1);
+      const points = prior?.scoringVersion === 2 ? profit / game.bigBlind :
+        100 * (standings.length - player.place - (tied - 1) / 2) / Math.max(1, standings.length - 1);
       players.push({ ...row, profit, bb: profit / game.bigBlind, initial: player.initialChips, chips: player.chips,
         debt: player.bankDebt, place: player.place, points, values, title: title(values) });
     }
     this.save({ ...prior, id: stats.id, status: 'completed', endedAt: Date.now(), startedAt: stats.startedAt,
-      rules: stats.rules, hands: stats.hands, players, scoringVersion: 1 });
+      rules: stats.rules, hands: stats.hands, players, participantUids: players.map(player => player.uid),
+      scoringVersion: prior?.scoringVersion ?? 1 });
     room.reportId = stats.id;
   }
 }

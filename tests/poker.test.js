@@ -110,7 +110,7 @@ test('room connection and readiness regression', async t => {
     roomCode = host.run('roomCode');
     assert.match(roomCode, /^\d{6}$/);
     assert.equal(host.elements.get('startBtn').disabled, true);
-    host.run('maxPlayers = 6; toggleAI(3)');
+    host.run('toggleAI(3)');
   });
 
   await t.test('manual join gets a seat, current settings and an enabled ready button', async () => {
@@ -118,7 +118,7 @@ test('room connection and readiness regression', async t => {
     manual.elements.get('roomCodeInput').value = roomCode;
     manual.click('confirmJoinBtn');
     assert.equal(manual.elements.get('readyBtn').disabled, true);
-    await until(() => manual.run('mySeatId') === 1 && manual.run('maxPlayers') === 6, 'manual join');
+    await until(() => manual.run('mySeatId') === 1 && manual.run('maxPlayers') === 8, 'manual join');
     assert.equal(manual.elements.get('readyBtn').disabled, false);
     assert.equal(manual.run('aiSlots[3]'), true);
     assert.match(manual.elements.get('waitTip').textContent, /已连接/);

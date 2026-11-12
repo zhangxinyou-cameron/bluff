@@ -12,7 +12,6 @@ module.exports=function install(RoomManager){
     },
     extraCommand(room,person,data){
       const g=room.game,me=g?.players.find(p=>p.id===person.id);
-      if(room.leagueMatch?.mode==='team'&&['peekThreshold','peekRequest','peekReply'].includes(data.type))return fail('计分团队场不开放定向看牌');
       if(room.leagueMatch&&g&&['deckMode','blindMode'].includes(data.type))return fail('联赛比赛开局后锁定牌制和盲注');
       if(data.type==='peekThreshold'){
         if(data.threshold!==null&&(!Number.isSafeInteger(data.threshold)||data.threshold<0))return fail('门槛须为非负整数，或关闭自动同意');
@@ -30,7 +29,18 @@ module.exports=function install(RoomManager){
         if(person.id!==0)return fail('只有房主可以踢出玩家');
         if(!Number.isSafeInteger(data.target)||data.target===0)return fail('不能踢出房主');
         const target=room.people.get(data.target),player=g?.players.find(p=>p.id===data.target);
-        if(!target&&!player)return fail('玩家不存在');
+        if(!target&&!player&&!room.aiSlots[data.target])return fail('玩家不存在');
+        if(player?.isAI||!target){
+          if(player?.removeAfterHand)return{ok:true,duplicate:true};
+          delete room.aiSlots[data.target];
+          if(player){
+            player.removeAfterHand=true;player.connected=false;
+            this.disconnectPlayer(room,player.id);
+            this.tryStart(room);
+          }
+          this.event(room,'system',`${player?.name||'人机'} 已被房主移出牌桌`);
+          return{ok:true};
+        }
         if(target?.kicked)return{ok:true,duplicate:true};
         if(target){
           target.kicked=true;target.retired=true;target.connected=false;target.ready=false;
@@ -39,12 +49,8 @@ module.exports=function install(RoomManager){
         }
         const ws=this.connections.get(room.code)?.get(data.target);if(ws){ws.send(JSON.stringify({type:'kicked',fatal:true,message:'你已被房主移出房间，可手动重新加入',rejoinToken:target?.rejoinToken}));this.connections.get(room.code).delete(data.target);ws.close(4003,'Removed by host');}
         for(const request of g?.peekRequests||[])if(request.status==='pending'&&(request.from===data.target||request.to===data.target))request.status='expired';
-        const before=g?.phase,from=g?.communityCards.length;if(player){player.connected=false;E.disconnect(g,data.target);}else delete room.aiSlots[data.target];
         this.event(room,'system',`${target?.name||player?.name} 已被房主移出房间`);
-        if(g?.phase==='runout_vote'&&g.runoutVote.eligibleIds.includes(data.target))this.finishVote(room,false,'有争池玩家离桌，本手发一次牌');
-        else if(g&&E.betting({phase:before})&&['hand_over','tournament_over'].includes(g.phase)){
-          this.pace(room,g.showdownOccurred?'runout':null,from,this.timing.action);this.recordSettlement(room);
-        }
+        if(player){player.connected=false;this.disconnectPlayer(room,data.target);}
         if(g?.phase==='hand_over')this.tryStart(room);
         return{ok:true};
       }

@@ -5,6 +5,8 @@ const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const points = require('./league-points');
 
 const formats = new Map([[`${points.id}:${points.version}`, points]]);
+const NET_FORMAT = 'points:2';
+const scoreFormat = league => league.endedAt ? league.format : NET_FORMAT;
 const active = match => ['waiting', 'running'].includes(match.status);
 const bounded = (number, min, max) => Number.isInteger(number) && number >= min && number <= max;
 const label = value => typeof value === 'string' ? value.trim().slice(0, 40) : '';
@@ -49,22 +51,24 @@ class Leagues {
 
   list(uid) {
     return [...this.leagues.values()].filter(league => !league.deletedAt && league.members.includes(uid))
-      .map(({ code, name, owner, mode, endedAt }) => ({ code, name, owner, mode, endedAt }));
+      .map(({ code, name, owner, endedAt }) => ({ code, name, owner, endedAt }));
   }
 
   detail(league, uid, roomForCode) {
     const matches = this.matches(league);
-    const format = formats.get(league.format);
+    const version = scoreFormat(league);
+    const format = version === NET_FORMAT ? points : formats.get(version);
     if (!format) throw error(503, '当前联赛规则版本未安装');
-    const { players, teams: teamStandings, ledger } = format.aggregate(league, matches);
-    return { ...league, members: league.members.map(id => profile(this.accounts.byUid.get(id))),
+    const { players, teams: teamStandings, ledger } = format.aggregate(league, matches, version === NET_FORMAT);
+    return { ...league, format: version, teamCount: league.teamCount || 16, teamSize: league.teamSize || 8,
+      members: league.members.map(id => profile(this.accounts.byUid.get(id))),
       teams: league.teams.map(team => ({ ...team, requests: team.captain === uid ? team.requests : team.requests.filter(id => id === uid) })),
       matches: matches.map(({ players, ...match }) => {
-        const room = match.status === 'waiting' ? roomForCode(match.code) : null;
+        const room = active(match) ? roomForCode(match.code) : null;
         const seats = room ? [...room.people.values()].filter(person => person.connected && !person.retired)
           .map(({ uid, name, avatar, id, ready }) => ({ uid, name, avatar, host: id === 0, ready: id === 0 || ready })) : [];
-        return { ...match, participantCount: players?.length || match.participantUids?.length || 0,
-          ...(room ? { seats, capacity: room.maxPlayers, lineup: this.lineup(league, seats) } : {}) };
+        return { ...match, participantCount: players?.length ?? (room ? seats.length : (match.participantUids?.length || 0)),
+          ...(room ? { seats, capacity: room.maxPlayers } : {}) };
       }),
       locked: league.members.filter(id => this.locked(league, id)), players, teamStandings, ledger };
   }
@@ -77,54 +81,31 @@ class Leagues {
     const match = this.stats.matches.get(id);
     if (!match?.leagueCode || !active(match)) throw error(404, '比赛房已关闭');
     this.admit(match, uid);
-    if (match.status === 'running' && !match.participantUids.includes(uid)) throw error(409, '比赛已开始，请等待下一场');
     return { code: match.code, host: match.owner === uid };
   }
 
   admit(match, uid) {
     const league = this.league(match.leagueCode, uid);
     if (league.endedAt || !active(this.stats.matches.get(match.id))) throw error(409, '比赛已结束');
-    if (league.mode === 'team' && !league.teams.some(team => team.members.includes(uid))) throw error(403, '请先加入本联赛的队伍');
     return league;
   }
 
-  lineup(league, humans) {
-    if (league.mode !== 'team') return { teams: [], balanced: true, seatTeams: {} };
-    const byUid = new Map(league.teams.flatMap(team => team.members.map(uid => [uid, team])));
-    const teams = {};
-    const counts = new Map();
-    for (const { uid } of humans) {
-      const team = byUid.get(uid);
-      if (!team) continue;
-      teams[uid] = team.id;
-      counts.set(team.id, (counts.get(team.id) || 0) + 1);
-    }
-    return { teams: league.teams.filter(team => counts.has(team.id)).map(team => ({ name: team.name, count: counts.get(team.id) })),
-      balanced: counts.size >= 2 && new Set(counts.values()).size === 1, seatTeams: teams };
-  }
-
-  roster(match, humans) {
-    const league = this.league(match.leagueCode, humans[0]?.uid);
-    for (const { uid } of humans) this.admit(match, uid);
-    const { balanced, seatTeams } = this.lineup(league, humans);
-    if (!balanced) {
-      throw error(400, '团队场至少需要两支队伍，且各队上场人数必须相同');
-    }
-    return { ...match, teams: seatTeams };
+  teamId(code, uid) {
+    return this.leagues.get(code)?.teams.find(team => team.members.includes(uid))?.id ?? null;
   }
 
   locked(league, uid) {
     return this.matches(league).some(match => match.status === 'completed' &&
-      match.hands >= league.minHands && match.players.some(player => player.uid === uid && player.teamId));
+      match.hands >= (scoreFormat(league) === NET_FORMAT ? 1 : league.minHands) &&
+      match.players.some(player => player.uid === uid && player.teamId));
   }
 
   command(uid, data, roomExists) {
     if (data.action === 'create') {
       const name = label(data.name);
-      const { mode, minHands, minMatches } = data;
-      if (!name || !['solo', 'team'].includes(mode) || !bounded(minHands, 1, 500) || !bounded(minMatches, 1, 100) ||
-          (mode === 'team' && (!bounded(data.teamCount, 2, 16) || !bounded(data.teamSize, 1, 8)))) {
-        throw error(400, '请核对联赛名称、赛制、队伍人数和出场门槛');
+      const { minMatches, teamCount = 16, teamSize = 8 } = data;
+      if (!name || !bounded(minMatches, 1, 100) || !bounded(teamCount, 2, 16) || !bounded(teamSize, 1, 8)) {
+        throw error(400, '请核对联赛名称、队伍人数和出场门槛');
       }
       let code = data.code;
       if (code == null) {
@@ -133,9 +114,8 @@ class Leagues {
         if (typeof code !== 'string' || !/^[0-9]{8}$/.test(code)) throw error(400, '请输入 8 位数字联赛房间号');
         if (this.leagues.has(code)) throw error(409, '此联赛房间号已被使用，请换一个号码');
       }
-      const league = { code, name, mode, minHands, minMatches, owner: uid, members: [uid], teams: [],
-        teamCount: mode === 'team' ? data.teamCount : 0, teamSize: mode === 'team' ? data.teamSize : 0,
-        format: `${points.id}:${points.version}`, createdAt: Date.now(), endedAt: null };
+      const league = { code, name, minMatches, owner: uid, members: [uid], teams: [],
+        teamCount, teamSize, format: NET_FORMAT, createdAt: Date.now(), endedAt: null };
       this.save(league);
       return { code };
     }
@@ -166,13 +146,10 @@ class Leagues {
     if (['finish', 'void'].includes(data.action) && !isOwner) throw error(403, '仅主办方可以操作');
     if (data.action === 'open') {
       if (current) throw error(409, '请先结束现有比赛');
-      if (league.mode === 'team' && (!league.teams.some(team => team.members.includes(uid)) || league.teams.length < 2)) {
-        throw error(409, '请先创建至少两支队伍，开房成员也须加入一队');
-      }
       let code;
       do { code = String(randomInt(100_000, 1_000_000)); } while (roomExists(code) || this.matchForCode(code));
       const match = this.stats.save({ id: randomUUID(), code, name: label(data.name) || `第 ${this.matches(league).length + 1} 场`,
-        leagueCode: league.code, mode: league.mode, owner: uid, status: 'waiting', createdAt: Date.now() });
+        leagueCode: league.code, scoringVersion: 2, owner: uid, status: 'waiting', createdAt: Date.now() });
       return { matchId: match.id };
     }
     if (data.action === 'cancel') {
@@ -191,12 +168,14 @@ class Leagues {
     if (data.action === 'finish') {
       if (current) throw error(409, '请先结算或中止当前比赛');
       league.endedAt = Date.now();
+      league.format = NET_FORMAT;
       this.save(league);
       return {};
     }
 
-    if (league.mode !== 'team') throw error(400, '个人联赛没有队伍');
     if (current) throw error(409, '请在两场比赛之间调整队伍');
+    league.teamCount ||= 16;
+    league.teamSize ||= 8;
     const mine = league.teams.find(team => team.members.includes(uid));
     const team = league.teams.find(row => row.id === data.teamId);
     if (data.action === 'createTeam') {

@@ -31,7 +31,6 @@
   const leagueUrl = code => '/club.html?league=' + encodeURIComponent(code);
   const reportUrl = id => '/club.html?report=' + encodeURIComponent(id);
   const tableUrl = id => '/?leagueMatch=' + encodeURIComponent(id);
-  const modeName = mode => mode === 'team' ? '团队赛' : '个人赛';
   const states = { waiting: '等待开赛', running: '比赛进行中', completed: '已结算', interrupted: '已中断' };
   const personName = player => (RiverAvatars.get(player?.avatar).emoji + ' ' + (player?.name || '玩家'));
   const action = (text, handler, secondary = false) => {
@@ -95,7 +94,7 @@
         buttonLink('看赛报', reportUrl(report.id), true))));
     const cards = leagues.length ? [...leagues].sort((a, b) => Number(!!a.endedAt) - Number(!!b.endedAt)).map(league =>
       el('article', { className: 'club-league-card' },
-        el('div', {}, row(badge(modeName(league.mode)), badge(league.endedAt ? '已结算' : '进行中', !league.endedAt)),
+        el('div', {}, badge(league.endedAt ? '已结算' : '进行中', !league.endedAt),
           el('h3', {}, league.name),
           el('small', {}, `房间号 ${league.code}${league.owner === identity.profile.uid ? ' · 我主办' : ''}`)),
         buttonLink(league.endedAt ? '查看联赛' : '进入联赛', leagueUrl(league.code), !!league.endedAt))) :
@@ -117,25 +116,15 @@
   const codeField = title => field(title, 'code', { inputmode: 'numeric', pattern: '[0-9]{8}', maxlength: 8, placeholder: '8 位数字' });
 
   function showCreate() {
-    const formats = el('fieldset', { className: 'club-mode-options' }, el('legend', {}, '联赛赛制'),
-      ['solo', 'team'].map(mode => el('label', { className: 'club-mode-option' },
-        el('input', { type: 'radio', name: 'mode', value: mode, checked: mode === 'solo' }),
-        el('strong', {}, modeName(mode)))));
-    const teams = el('div', { className: 'club-form-grid', hidden: true },
-      numeric('队伍数量', 'teamCount', 2, 2, 16), numeric('每队名额', 'teamSize', 3, 1, 8));
     const create = form('创建联赛', [
       el('div', { className: 'club-form-grid' }, field('联赛名称', 'name', { maxlength: 40 }), codeField('联赛房间号')),
-      formats, muted('本届所有场次沿用选定的赛制。'), teams,
-      el('details', { className: 'club-details' }, el('summary', {}, '计分门槛'),
-        el('div', { className: 'club-form-grid' }, numeric('每场最低手数', 'minHands', 5, 1, 500),
+      muted('比赛按个人进行，组队成员的净收益同时计入团队榜。'),
+      el('details', { className: 'club-details' }, el('summary', {}, '队伍和榜单设置'),
+        el('div', { className: 'club-form-grid' }, numeric('队伍上限', 'teamCount', 16, 2, 16),
+          numeric('每队名额', 'teamSize', 8, 1, 8),
           numeric('上榜最低场数', 'minMatches', 2, 1, 100)))
     ], values => mutate('create', { ...values, teamCount: +values.teamCount, teamSize: +values.teamSize,
-      minHands: +values.minHands, minMatches: +values.minMatches }));
-    formats.onchange = () => {
-      teams.hidden = create.elements.mode.value !== 'team';
-      for (const input of teams.querySelectorAll('input')) input.disabled = teams.hidden;
-    };
-    formats.onchange();
+      minMatches: +values.minMatches }));
     display(el('section', { className: 'club-form-page' }, buttonLink('返回联赛大厅', '/club.html', true),
       el('div', { className: 'club-panel' }, el('h1', {}, '创建联赛'), create)));
   }
@@ -225,6 +214,11 @@
   }
 
   function showTeamRank(league) {
+    if (league.format === 'points:2') {
+      return panel('团队积分榜', standings(['排名', '队伍', '参赛场数', '场均积分 BB', '累计积分 BB', '净收益筹码', '队伍 MVP'],
+        league.teamStandings.map(team => [team.place || '待达标', team.name, team.matches, number(team.average),
+          number(team.points), number(team.profit), team.mvp.map(player => player.name).join('、') || '—'])));
+    }
     const names = new Map(league.teams.map(team => [team.id, team.name]));
     return panel('团队积分榜', standings(['排名', '队伍', '场数', '对阵胜/平/负', '场均分', '总分', '净收益 BB', '队伍 MVP'],
       league.teamStandings.map(result => [result.place || '待达标', result.name, result.matches, `${result.wins}/${result.draws}/${result.losses}`,
@@ -240,27 +234,23 @@
       muted('至少打过 10 手，且一维有 5 次适用机会后才显示正式分数。胜率和赔率为模型估算。'));
   }
 
-  function matchRoom(league, match, canPlay, canCancel) {
+  function matchRoom(league, match, canCancel) {
     const member = league.members.find(person => person.uid === match.owner);
     const waiting = match.status === 'waiting';
     const seats = match.seats || [];
     const readyCount = seats.filter(seat => seat.ready).length;
     const joined = seats.some(seat => seat.uid === identity.profile.uid);
-    const mayReturn = waiting || match.participantUids?.includes(identity.profile.uid);
-    const enter = !mayReturn ? muted('本场已开赛，可等待下一场。') : !canPlay ? muted('加入队伍后即可入座。') :
-      buttonLink(waiting ? joined ? '返回等待房' : '加入比赛房' : '返回比赛房', tableUrl(match.id));
+    const enter = buttonLink(joined ? '返回比赛房' : '加入比赛房', tableUrl(match.id));
     return el('section', { className: 'club-match club-panel' },
       el('div', { className: 'club-match-top' },
-        el('div', {}, row(badge(states[match.status], waiting), badge(modeName(league.mode))),
+        el('div', {}, badge(states[match.status], waiting),
           el('h2', {}, match.name), muted(`房间号 ${match.code} · 房主 ${member?.name || '玩家'}`)),
-        metric(waiting ? '已准备' : '参赛人数', waiting ? `${readyCount} / ${seats.length}` : match.participantCount)),
+        metric(waiting ? '已准备' : '在线玩家', waiting ? `${readyCount} / ${seats.length}` : match.participantCount)),
       waiting ? el('div', { className: 'club-seat-list', 'aria-label': '等待房玩家' }, seats.length ? seats.map(seat =>
         el('div', { className: 'club-seat-chip' }, el('span', { 'aria-hidden': 'true' }, RiverAvatars.get(seat.avatar).emoji),
           el('div', {}, el('strong', {}, seat.name), el('small', {}, seat.host ? '房主' : seat.ready ? '已准备' : '未准备'))))
         : muted('等待玩家入座。')) : null,
-      waiting ? muted(`${seats.length} / ${match.capacity || 4} 已入座`) : null,
-      waiting && match.lineup?.teams.length ? row(...match.lineup.teams.map(team => badge(`${team.name} ${team.count} 人`))) : null,
-      waiting && match.lineup?.balanced === false ? muted('团队场需要至少两队，各队上场人数相同。') : null,
+      waiting ? muted(`${seats.length} 位真人已入座 · 最多 ${match.capacity || 8} 人`) : muted('中途入桌时先观战，下一手可参与。'),
       row(enter, canCancel ? action('中止比赛', () => {
         if (confirm('中止这场比赛并关闭牌桌？')) run(() => mutate('cancel'));
       }, true) : null));
@@ -288,19 +278,16 @@
     const me = identity.profile.uid;
     const owner = league.owner === me;
     const active = league.matches.find(match => ['waiting', 'running'].includes(match.status));
-    const mode = modeName(league.mode);
-    const canPlay = league.mode === 'solo' || league.teams.some(team => team.members.includes(me));
-    const matchPanel = active ? matchRoom(league, active, canPlay, owner || active.owner === me) :
+    const netPoints = league.format === 'points:2';
+    const matchPanel = active ? matchRoom(league, active, owner || active.owner === me) :
       !league.endedAt ? el('section', { className: 'club-match club-panel' }, el('h2', {}, '比赛房'),
-        canPlay && (league.mode !== 'team' || league.teams.length >= 2) ?
-          form('创建比赛房', [field('比赛名称（可选）', 'name', { required: false, maxlength: 40 })], values => mutate('open', values)) :
-          muted(canPlay ? '至少需要创建两支队伍才能开房。' : '加入队伍后即可创建或加入比赛房。')) : null;
+        form('创建比赛房', [field('比赛名称（可选）', 'name', { required: false, maxlength: 40 })], values => mutate('open', values))) : null;
     const history = panel('比赛记录', league.matches.length ? list([...league.matches].reverse().map(match => {
       const text = match.voidReason ? '已作废 · ' + match.voidReason : states[match.status];
       const teamResult = league.ledger.find(entry => entry.id === match.id)?.teams || [];
       const description = teamResult.map(team => {
         const name = league.teams.find(row => row.id === team.id)?.name;
-        return `${name} ${number(team.bb)} BB / ${number(team.points)} 分`;
+        return netPoints ? `${name} ${number(team.points)} BB` : `${name} ${number(team.bb)} BB / ${number(team.points)} 分`;
       }).join(' · ');
       return [row(el('strong', {}, match.name),
         badge(text + (match.hands == null ? '' : ` · ${match.hands} 手${match.hands < league.minHands ? ' · 未达计分门槛' : ''}`))),
@@ -311,21 +298,22 @@
         if (reason?.trim()) run(() => mutate('void', { matchId: match.id, reason }));
       }, true) : null)];
     })) : muted('尚无比赛。'));
-    const personal = panel('个人积分榜', standings(['排名', '玩家', '场数', '手数', '场均分', '总分', '净筹码', '净收益 BB', 'BB/100'],
+    const personal = panel('个人积分榜', standings(['排名', '玩家', '场数', '手数', netPoints?'场均积分 BB':'场均分',
+      netPoints?'累计积分 BB':'总分', '净收益筹码', ...(netPoints?[]:['净收益 BB']), 'BB/100'],
       league.players.map(player => [player.place || '待达标', personName(player), player.matches, player.hands,
-        number(player.average), number(player.points), number(player.profit), number(player.bb), number(player.bb100)])));
+        number(player.average), number(player.points), number(player.profit), ...(netPoints?[]:[number(player.bb)]), number(player.bb100)])));
     const expanded = [...view.querySelectorAll('details')].map(details => details.open);
     display(el('header', { className: 'club-hero' },
-      row(badge(mode), badge(league.endedAt ? '已结算' : '进行中', !league.endedAt)), el('h1', {}, league.name),
-      muted(`房间号 ${league.code} · 每场至少 ${league.minHands} 手 · 上榜至少 ${league.minMatches} 场`),
+      badge(league.endedAt ? '已结算' : '进行中', !league.endedAt), el('h1', {}, league.name),
+      muted(`房间号 ${league.code} · ${netPoints?'净收益每 1 BB 计 1 分':`每场至少 ${league.minHands} 手`} · 上榜至少 ${league.minMatches} 场`),
       !league.endedAt ? row(action('复制联赛邀请', async () => {
         const url = new URL(leagueUrl(league.code), location.origin).href;
         try { await navigator.clipboard.writeText(url); tell('邀请链接已复制'); }
         catch { prompt('复制联赛邀请链接', url); }
       }, true)) : null),
-      matchPanel, league.mode === 'team' ? teamsView(league) : null,
+      matchPanel, teamsView(league),
       el('div', { className: 'club-detail-columns' },
-        el('div', {}, league.mode === 'team' ? showTeamRank(league) : null, personal,
+        el('div', {}, showTeamRank(league), personal,
           league.players.length ? el('details', { className: 'club-details' }, el('summary', {}, '联赛六维与称号'),
             ratingHelp(), grid(league.players.map(dimensionsCard))) : null),
         el('div', {}, history, owner && !active ? leagueManagement(league) : null)));
@@ -335,7 +323,7 @@
   async function showReport() {
     const report = await request('/api/reports?id=' + encodeURIComponent(reportId));
     const rules = report.rules;
-    const net = standings(['名次', '玩家', '手数', '起始筹码', '结束筹码', '未还贷款', '净收益', 'BB', '个人积分'],
+    const net = standings(['名次', '玩家', '手数', '起始筹码', '结束筹码', '未还贷款', '净收益', 'BB', report.scoringVersion===2?'个人积分 BB':'个人积分'],
       report.players.map(player => [player.place, personName(player), player.hands, number(player.initial), number(player.chips),
         number(player.debt), number(player.profit), number(player.bb), number(player.points)]));
     const deck = { short: '短牌', standard: '标准牌', auto: '按人数自动选择牌制' };

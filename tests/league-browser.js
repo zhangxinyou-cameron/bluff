@@ -93,11 +93,10 @@ async function main() {
     await host.waitForURL('**/club.html?new');
     await host.getByLabel('联赛名称').fill('四队联赛');
     await host.getByLabel('联赛房间号').fill('00420125');
-    await host.getByRole('radio', { name: '团队赛' }).check();
-    await host.getByLabel('队伍数量').fill('4');
+    assert.equal(await host.getByRole('radio').count(), 0);
+    await host.getByText('队伍和榜单设置', { exact: true }).click();
+    await host.getByLabel('队伍上限').fill('4');
     await host.getByLabel('每队名额').fill('2');
-    await host.getByText('计分门槛', { exact: true }).click();
-    await host.getByLabel('每场最低手数').fill('1');
     await host.getByRole('button', { name: '创建联赛' }).click();
     await host.getByRole('heading', { name: '四队联赛', exact: true }).waitFor();
     const code = new URL(host.url()).searchParams.get('league');
@@ -149,6 +148,7 @@ async function main() {
       await tableHost.waitForFunction(revision => g.revision > revision, before);
     }
     async function finish(tableHost = host) {
+      await idle(tableHost);
       await tableHost.locator('#finishSessionBtn').click();
       await tableHost.getByRole('link', { name: '查看六维赛报' }).waitFor();
       const url = await tableHost.getByRole('link', { name: '查看六维赛报' }).getAttribute('href');
@@ -160,14 +160,19 @@ async function main() {
     await api(pages[4], '/api/league?match=invalid', null, 404);
     await enter(pages[1], first.matchId);
     await enter(pages[4], first.matchId);
-    await host.locator('#waitTeamCounts').filter({ hasText: '队伍1 2 人 · 队伍2 1 人' }).waitFor();
-    assert.equal(await host.locator('#startBtn').isDisabled(), true);
-    await host.locator('#leagueReadyState').filter({ hasText: '各队上场人数必须相同' }).waitFor();
-    await send(host, 'startGame');
-    assert.equal(await host.evaluate(() => g), null);
-    await pages[4].evaluate(() => RiverSession.leave({ permanent: true }));
-    await host.waitForFunction(() => seats.filter(Boolean).length === 2);
+    await host.locator('#leagueReadyState').filter({ hasText: '全员已准备' }).waitFor();
+    assert.equal(await host.locator('#startBtn').isEnabled(), true);
     await enter(pages[2], first.matchId);
+    await settings(host, 'deckModeSel', 'short');
+    const firstGuests=[pages[1],pages[2],pages[4]];
+    for (const guest of firstGuests) {
+      await guest.locator('#waitRuleSummary').filter({ hasText: '36 张短牌' }).waitFor();
+      await guest.locator('#leagueReadyState').filter({ hasText: '规则已更新' }).waitFor();
+      await guest.locator('#readyBtn').click();
+      await idle(guest);
+    }
+    await host.locator('#startBtn').click();
+    await host.waitForFunction(() => g?.handNumber === 1);
     const directGuest=pages[3],matchPath='/?leagueMatch='+first.matchId;
     await directGuest.context().clearCookies();
     await directGuest.goto(base+matchPath);
@@ -176,27 +181,21 @@ async function main() {
     await directGuest.waitForURL(url=>url.pathname==='/account.html'&&url.searchParams.get('next')===matchPath);
     await signIn(directGuest,4,false,null);
     await idle(directGuest);
-    await directGuest.locator('#readyBtn').click();
-    await idle(directGuest);
-    await settings(host, 'deckModeSel', 'short');
-    for (const guest of pages.slice(1, 4)) {
-      await guest.locator('#waitRuleSummary').filter({ hasText: '36 张短牌' }).waitFor();
-      await guest.locator('#leagueReadyState').filter({ hasText: '规则已更新' }).waitFor();
-      await guest.locator('#readyBtn').click();
-      await idle(guest);
-    }
-    await host.locator('#startBtn').click();
-    await host.waitForFunction(() => g?.handNumber === 1);
-    for (let index = 0; index < 3; index++) await takeAction(pages.slice(0, 4), 'fold');
+    await directGuest.locator('#handTypeText').filter({ hasText: '本手观战 · 下一手入座' }).waitFor();
+    assert.equal(await directGuest.locator('#actionPanel button').count(), 0);
+    for (let index = 0; index < 3; index++) await takeAction([host,...firstGuests], 'fold');
     await host.waitForFunction(() => g.phase === 'hand_over');
     assert.equal(await finish(), first.matchId);
     league = await detail(host, code);
-    assert.equal(league.matches[0].mode, 'team');
-    assert.deepEqual(league.teamStandings.map(team => team.matches), [1, 1, 1, 1]);
+    assert.equal(league.format, 'points:2');
+    assert.equal(league.players.some(player => player.uid === uids[3]), false);
+    assert.equal(league.teamStandings.filter(team=>team.matches===1).length,3);
     assert.equal(league.teamStandings.every(team => team.place === undefined), true);
-    assert.equal(league.locked.includes(uids[4]), false);
+    assert.equal(league.locked.includes(uids[3]), false);
+    assert.equal(league.locked.includes(uids[4]), true);
+    const absentee = league.players.find(player=>player.uid===uids[4]);
     await change(host, 'leaveTeam', code, {}, 409);
-    await change(pages[4], 'leaveTeam', code);
+    await change(directGuest, 'leaveTeam', code);
 
     const memberHost = pages[1];
     await host.goto(base + '/club.html?league=' + code);
@@ -206,7 +205,7 @@ async function main() {
     await idle(memberHost);
     const second = (await detail(host, code)).matches.at(-1);
     assert.equal(second.owner, uids[1]);
-    await api(pages[4], '/api/league?match=' + second.id, null, 403);
+    assert.equal((await api(directGuest, '/api/league?match=' + second.id)).host, false);
     await change(pages[2], 'cancel', code, {}, 403);
     await host.getByRole('heading', { name: '两队标准牌买入' }).waitFor();
     await host.getByRole('link', { name: '加入比赛房' }).click();
@@ -229,23 +228,44 @@ async function main() {
     await takeAction(pages.slice(0, 2), 'allin', memberHost);
     await takeAction(pages.slice(0, 2), 'call', memberHost);
     for (const page of pages.slice(0, 2)) await page.locator('#voteTwiceBtn').click();
-    await host.waitForFunction(() => clientGameState.phase === 'hand_over' && RiverSession.getDiagnostics().serverNow >= RiverSession.getDiagnostics().interactiveAt);
+    await host.locator('#resultScreen').waitFor({ state: 'visible' });
     const account = await host.evaluate(() => clientGameState.players.find(player => player.id === mySeatId));
     await send(host, 'bank', { kind: 'borrow', amount: 500, handNumber: 1, bankVersion: account.bankVersion });
+    const original=await host.evaluate(()=>clientGameState.players.find(player=>player.id===mySeatId));
+    await host.locator('#awayBtn').click();
+    await host.locator('#homeProfile').waitFor();
+    await memberHost.waitForFunction(id=>g.players.find(player=>player.id===id)?.disconnected,original.id);
+    await host.goto(base+'/?leagueMatch='+second.id);
+    await idle(host);
+    const returned=await host.evaluate(()=>clientGameState.players.find(player=>player.id===mySeatId));
+    assert.deepEqual([returned.id,returned.chips,returned.bankDebt],[original.id,original.chips,500]);
+    const newcomer=directGuest;
+    await newcomer.goto(base+'/club.html?league='+code);
+    await newcomer.getByRole('link',{name:'加入比赛房'}).click();
+    await idle(newcomer);
+    await newcomer.locator('#nextHandBtn').waitFor();
+    assert.equal(await newcomer.evaluate(()=>clientGameState.players.find(player=>player.id===mySeatId).chips),2000);
+    for(const page of [host,memberHost,newcomer]){await page.locator('#nextHandBtn').click();await idle(page);}
+    await memberHost.waitForFunction(()=>g.handNumber===2);
+    const secondRoom=roomManager.games.get(await memberHost.evaluate(()=>roomCode));
+    while(['pre_flop','flop','turn','river'].includes(secondRoom.game.phase))await takeAction([host,memberHost,newcomer],'fold',memberHost);
     assert.equal(await finish(memberHost), second.id);
     const result = await api(host, '/api/reports?id=' + second.id);
     assert.equal(result.rules.bigBlind, 50);
     assert.equal(result.players.find(player => player.uid === uids[0]).debt, 500);
     assert.equal(result.players.reduce((sum, player) => sum + player.profit, 0), 0);
-    assert.ok(result.players.every(player => player.values.luck.samples === 1 && player.values.luck.score === null));
+    assert.ok(result.players.filter(player=>player.uid!==uids[3]).every(player => player.values.luck.samples === 1 && player.values.luck.score === null));
+    assert.equal(result.players.find(player=>player.uid===uids[3]).hands,1);
+    assert.equal(result.players.find(player=>player.uid===uids[3]).teamId,null);
     await host.getByRole('link', { name: '查看六维赛报' }).click();
     await host.getByRole('heading', { name: '两队标准牌买入', exact: true }).waitFor();
-    assert.equal(await host.locator('.club-dimensions').count(), 2);
+    assert.equal(await host.locator('.club-dimensions').count(), 3);
     await host.getByRole('link', { name: '返回所属联赛' }).click();
     try { await host.getByRole('heading', { name: '团队积分榜' }).waitFor({ timeout: 4000 }); }
     catch (error) { throw new Error(host.url() + '\n' + await host.locator('body').innerText(), { cause: error }); }
     assert.equal(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     league = await detail(host, code);
+    assert.deepEqual(league.players.find(player=>player.uid===uids[4]),absentee);
     assert.equal(league.teamStandings.filter(team => team.place !== undefined).length, 2);
     assert.equal(league.teamStandings.filter(team => team.mvp.length > 0).length, 2);
     await host.getByRole('navigation').getByRole('link', { name: '联赛', exact: true }).click();
@@ -259,25 +279,34 @@ async function main() {
     await change(host, 'finish', code);
     await change(host, 'open', code, {}, 409);
 
-    const solo = await change(pages[2], 'create', null, { name: '个人联赛', mode: 'solo', minHands: 1, minMatches: 1 });
+    const solo = await change(pages[2], 'create', null, { name: '朋友联赛', minMatches: 1 });
     await change(host, 'join', solo.code);
-    await change(pages[2], 'createTeam', solo.code, { name: '队伍' }, 400);
-    const soloMatch = await change(pages[2], 'open', solo.code, { mode: 'team' });
-    assert.equal((await detail(host, solo.code)).matches[0].mode, 'solo');
+    const soloMatch = await change(pages[2], 'open', solo.code);
     await host.goto(base + '/?leagueMatch=' + soloMatch.matchId);
     await idle(host);
     await host.locator('#readyBtn').click();
     await idle(host);
     await pages[2].goto(base + '/?leagueMatch=' + soloMatch.matchId);
     await idle(pages[2]);
+    await pages[2].getByRole('button',{name:'添加人机'}).first().click();
+    await idle(pages[2]);
     await pages[2].locator('#startBtn').click();
     await pages[2].waitForFunction(() => g?.handNumber === 1);
     const soloRoom = roomManager.games.get(await pages[2].evaluate(() => roomCode));
+    const bot=soloRoom.game.players.find(player=>player.isAI);
+    await pages[2].locator('#managePlayersBtn').click();
+    await pages[2].locator('#socialTarget').selectOption(String(bot.id));
+    await pages[2].getByRole('button',{name:'移除所选人机'}).click();
+    await idle(pages[2]);
+    await pages[2].getByRole('button',{name:'关闭互动'}).click();
     const soloActor = soloRoom.game.players[soloRoom.game.currentPlayerIndex].id === 0 ? pages[2] : host;
     await soloActor.locator('.action-fold').click();
     await pages[2].locator('#finishSessionBtn').click();
     await pages[2].getByRole('link', { name: '查看六维赛报' }).waitFor();
-    assert.equal((await detail(host, solo.code)).players.length, 2);
+    const soloReport=await api(host,'/api/reports?id='+soloMatch.matchId);
+    assert.equal(soloRoom.game.players.some(player=>player.isAI),false);
+    assert.equal(soloReport.players.length,2);
+    roomManager.check(soloRoom);
     const interrupted = await change(pages[2], 'open', solo.code);
 
     for (const room of roomManager.games.values()) roomManager.closeRoom(room.code);
@@ -328,7 +357,7 @@ async function main() {
     assert.equal(services.stats.matches.has(second.id), false);
     assert.equal(services.stats.matches.has(soloMatch.matchId), true);
     assert.deepEqual(errors, []);
-    console.log('League browser passed: five accounts, three scored matches, live readiness, restart, and organizer-only archive deletion with confirmation.');
+    console.log('League browser passed: five accounts, uneven team play, solo participation, watcher exclusion, late entry, UID return, bot removal, rankings and archive deletion.');
   } finally {
     await browser?.close();
     for (const ws of wss.clients) ws.terminate();

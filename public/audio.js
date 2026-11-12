@@ -148,7 +148,7 @@
     if (target.matches('#readyBtn, #confirmJoinBtn, .action-confirm')) return 'ready';
     if (target.matches('.action-fold, .action-cancel')) return 'fold';
     if (target.matches('#leaveBtn')) return 'leave';
-    if (target.matches('.action-raise, .action-call, .action-allin, .mini-btn')) return 'chips';
+    if (target.matches('.action-raise, .action-call, .action-allin')) return 'chips';
     return 'tap';
   }
   // Capture delegates include buttons created later by the game renderer.
