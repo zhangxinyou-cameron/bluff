@@ -88,8 +88,10 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
       const { players, ...summary } = report;
       const ratingVersion = report.ratingVersion ?? 1;
       json(res, { ...summary, ratingVersion, players: players.map(({ metrics, ...row }) => {
-        if (ratingVersion >= 2) return row;
-        return { ...row, values: scores(metrics, row.hands, ratingVersion) };
+        if (ratingVersion >= 4) return row;
+        if (ratingVersion === 1) return { ...row, values: scores(metrics, row.hands, ratingVersion) };
+        return { ...row, values: Object.fromEntries(Object.entries(row.values).map(([key, value]) =>
+          [key, { ...value, score: value.score === null ? null : Math.round(value.score) }])) };
       }) });
     } else {
       const reports = [...stats.matches.values()].filter(report => report.status === 'completed' && report.players.some(row => row.uid === uid))

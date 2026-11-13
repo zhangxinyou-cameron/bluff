@@ -93,7 +93,8 @@ function callFrequency(opponent, amount, view) {
   const tendency = (continued + 3) / (history.length + 6) - 0.5;
   const potOdds = price / Math.max(1, view.pot + price);
   const stackPressure = price / opponent.chips;
-  return clamp(0.86 - 1.18 * potOdds - 0.21 * stackPressure + 0.55 * tendency, 0.08, 0.88);
+  const sizePressure = Math.log2(Math.max(1, price / Math.max(view.pot, view.bigBlind)));
+  return clamp(0.87 - 0.95 * potOdds - 0.17 * stackPressure - 0.14 * sizePressure + 0.45 * tendency, 0.015, 0.90);
 }
 
 function raiseModel(view, hero, opponents, equity, total) {
@@ -193,11 +194,13 @@ function evaluateDecision({ view, minimum, seed }, action, paid, raised) {
   const best = models.reduce((better, model) => model.ev > better.ev ? model : better, { ev: Math.max(0, callEV), extra: 0, size: need });
   const chosen = raised ? models.find(model => model.size === Math.min(maxMatched, paid)) : null;
   const actualEV = action === 'fold' ? 0 : (chosen?.ev ?? callEV);
+  const valueSizes = models.filter(model => model.ev >= best.ev - scale * 0.07);
+  const valueTarget = valueSizes.reduce((target, model) => model.extra > target.extra ? model : target, { extra: 0, size: need });
   return { equity, fair: 1 / (opponents.length + 1), effective, need, scale, callEV, best, chosen,
-    regret: Math.max(0, best.ev - actualEV - scale * 0.06), actualEV, opponents,
+    regret: Math.max(0, best.ev - actualEV - scale * 0.035), actualEV, opponents,
     canPressure: models.some(model => model.foldChance > 0.05),
     bluffOpportunity: models.some(model => model.foldChance > 0.10 && model.ev > Math.max(0, callEV) + scale * 0.08),
-    valueTarget: Math.max(0, ...models.filter(model => model.ev >= best.ev - scale * 0.08).map(model => model.extra)) };
+    valueTarget };
 }
 
 module.exports = { clamp, dealtLuck, decisionSnapshot, evaluateDecision };

@@ -47,9 +47,9 @@ test('six-dimensional results require enough hands and valid samples and can be 
   assert.equal(scores(metrics, 9).courage.score, null);
   const result = scores(metrics, 10);
   assert.equal(result.luck.score, null);
-  assert.equal(result.courage.score, 3.5);
+  assert.equal(result.courage.score, 4);
   assert.equal(title(result), null);
-  assert.equal(title(scores(metrics, 10, 2), 2), '胆大心细');
+  assert.equal(title(scores(metrics, 10, 2, true), 2), '胆大心细');
   const league = { minHands: 1, minMatches: 1, teams: [] };
   const first = match('1', 20, [['a', null, 0, 50]]);
   const second = match('2', 20, [['a', null, 0, 50]]);
@@ -68,11 +68,21 @@ test('rating maps 0, neutral and 1 to 1, 3 and 5, and separates historical obser
   second.players[0].metrics.courage = { total: 2.5, samples: 5 };
   assert.equal(aggregate(league, [first], true).players[0].values.stability.score, 5);
   const player = aggregate(league, [first, second], true).players[0];
-  assert.equal(player.values.stability.score, 2.1);
+  assert.equal(player.values.stability.score, 2);
   assert.deepEqual(player.values.courage, { score: 3, samples: 5, observed: null });
   assert.equal(player.ratingVersion, 3);
   assert.equal(player.matches, 2);
   assert.equal(player.points, 0);
+});
+
+test('each dimension can reach tier five with sustained performance, capped with fewer than twelve samples', () => {
+  const metrics = empty();
+  for (const metric of Object.values(metrics)) Object.assign(metric, { total: 24, samples: 24 });
+  assert.ok(Object.values(scores(metrics, 24)).every(value => value.score === 5));
+  for (const metric of Object.values(metrics)) Object.assign(metric, { total: 11, samples: 11 });
+  assert.ok(Object.values(scores(metrics, 24)).every(value => Number.isInteger(value.score) && value.score < 5));
+  for (const metric of Object.values(metrics)) Object.assign(metric, { total: 0, samples: 24 });
+  assert.ok(Object.values(scores(metrics, 24)).every(value => Number.isInteger(value.score) && value.score >= 1));
 });
 
 test('folded royal counts as dealt luck, while a shared board royal earns no rarity bonus', () => {
@@ -118,7 +128,7 @@ test('decision model separates calculated restraint, low-equity courage and stro
   };
   const decision = { view, seed: 123, minimum: 160 };
   function observe(action, amount, raised, snapshot = decision, priorLoss = false) {
-    const hand = { observations: new Map() };
+    const hand = { observations: new Map(), valueBets: [] };
     const room = { statistics: { hand, lastLoss: new Map([[0, priorLoss]]) } };
     stats.action(room, 0, snapshot, { action, amount, raised, street: 'river' });
     return hand.observations.get(0);
@@ -147,11 +157,12 @@ test('rare hands visibly lift the rating and five good folds cannot confer a ste
   const baseline = scores(metrics, 16);
   metrics.luck.rarity = 1;
   const royal = scores(metrics, 16);
-  assert.ok(royal.luck.score >= baseline.luck.score + 0.6);
+  assert.ok(royal.luck.score > baseline.luck.score);
   assert.equal(title(baseline), null);
+  delete metrics.luck.rarity;
   metrics.stability = { samples: 16, total: 14 };
   assert.notEqual(title(scores(metrics, 16)), '稳健派');
-  metrics.calculation = { samples: 16, total: 12 };
+  metrics.calculation = { samples: 16, total: 12.5 };
   assert.equal(title(scores(metrics, 16)), '稳健派');
 });
 

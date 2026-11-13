@@ -289,7 +289,7 @@ async function main() {
     assert.equal(await finish(memberHost), second.id);
     const result = await api(host, '/api/reports?id=' + second.id);
     assert.equal(result.rules.bigBlind, 50);
-    assert.equal(result.ratingVersion, 3);
+    assert.equal(result.ratingVersion, 4);
     const archivedId = '4f178643-48ba-4c79-aad0-48347dc61e6f';
     const saved = services.stats.matches.get(second.id);
     services.stats.save({ ...saved, id: archivedId, leagueCode: null, ratingVersion: undefined,
@@ -297,7 +297,7 @@ async function main() {
         metrics: { ...player.metrics, stability: { total: 4, samples: 5 } } })) });
     const historical = await api(host, '/api/reports?id=' + archivedId);
     assert.equal(historical.ratingVersion, 1);
-    assert.deepEqual(historical.players[0].values.stability, { score: 4.2, samples: 5, observed: 4 });
+    assert.deepEqual(historical.players[0].values.stability, { score: 4, samples: 5, observed: 4 });
     assert.equal(historical.players[0].title, '稳健派');
     services.stats.deleteMatches([archivedId]);
     assert.equal(result.players.find(player => player.uid === uids[0]).debt, 500);
