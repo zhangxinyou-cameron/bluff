@@ -8,7 +8,7 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
   async function open(code){const context=await browser.newContext({viewport:code?{width:390,height:844}:{width:1280,height:800}});await context.addInitScript(()=>localStorage.setItem('river_audio',JSON.stringify({music:false,sfx:false})));
     const p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base+(code?'#room='+code:''));await p.getByLabel('访问密码').fill(password);await p.getByRole('button',{name:'验证并进入'}).click();await p.waitForFunction(()=>!!window.RiverSession);
     if(code){await p.waitForFunction(()=>wsConnected&&mySeatId>0);await p.locator('#readyBtn').click();await idle(p);}else{await p.locator('#createBtn').click();await p.locator('#waitTip').filter({hasText:'房间已创建'}).waitFor();await p.locator('#allowBuyInSel').selectOption('yes');await idle(p);}return p;}
-  async function table(per,total){const host=await open();for(const [id,value]of [['loanPerHandLimit',per],['loanTotalLimit',total]]){await host.locator('#'+id).fill(value);await host.locator('#'+id).press('Tab');await idle(host);}
+  async function table(per,total,threshold='不限'){const host=await open();for(const [id,value]of [['loanPerHandLimit',per],['loanTotalLimit',total],['buyInThreshold',threshold]]){await host.locator('#'+id).fill(value);await host.locator('#'+id).press('Tab');await idle(host);}
     const code=await host.locator('#displayRoomCode').textContent(),guest=await open(code),pages=[host,guest],room=roomManager.games.get(code);await guest.locator('#waitRuleSummary').filter({hasText:'未还本金上限'}).waitFor();await host.locator('#startBtn').click();await host.waitForFunction(()=>!!g);return{host,guest,pages,room};}
   async function finish(f){let steps=0;while(E.betting(f.room.game)){assert.ok(++steps<10);const game=f.room.game,p=game.players[game.currentPlayerIndex],page=f.pages[p.id],rev=game.revision;await page.locator('.action-fold').waitFor();await page.locator('.action-fold').click();await f.host.waitForFunction(rev=>g.revision>rev,rev);await idle(page);}for(const p of f.pages)await p.locator('#resultScreen').waitFor({state:'visible'});roomManager.check(f.room);}
   async function transact(f,kind,amount){const p=f.guest;await p.locator('#bankAmount').fill(String(amount));await p.locator(kind==='borrow'?'#bankBorrowBtn':'#bankRepayBtn').click();await idle(p);roomManager.check(f.room);}
@@ -24,6 +24,21 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
     await next(f);await transact(f,'repay',1000);await transact(f,'borrow',750);assert.equal(f.room.game.players[1].bankDebt,750);
     const zero=await table('0','无限');await finish(zero);await zero.guest.locator('#bankBtn').click();assert.equal(await zero.guest.locator('#bankBorrowBtn').isDisabled(),true);
     const unlimited=await table('无限','');await finish(unlimited);await unlimited.guest.locator('#bankBtn').click();await transact(unlimited,'borrow',25000);assert.equal(unlimited.room.game.players[1].bankDebt,25000);
-    assert.deepEqual(errors,[]);console.log('Loan limit UI passed: 3 two-client tables, 5 hands, custom/zero/unlimited settings, split borrowing, repayment, refresh, next-hand reset and forged over-limit rejection.');
+    const threshold=await table('500','600','2100');
+    await threshold.guest.locator('#winRateText').filter({hasText:/\d+%/}).waitFor();
+    await finish(threshold);await threshold.guest.locator('#bankBtn').click();
+    await threshold.guest.locator('#bankLimits').filter({hasText:'筹码须低于 2100'}).waitFor();
+    const balance=threshold.room.game.players[1].chips;
+    await transact(threshold,'borrow',2100-balance);
+    assert.equal(threshold.room.game.players[1].chips,2100);
+    assert.equal(await threshold.guest.locator('#bankBorrowBtn').isDisabled(),true);
+    const before=threshold.room.game.bankSequence;
+    await threshold.guest.evaluate(()=>{const s=clientGameState,p=s.players[mySeatId];RiverSession.command('bank',{kind:'borrow',amount:1,handNumber:s.handNumber,bankVersion:p.bankVersion});});
+    await idle(threshold.guest);
+    assert.equal(threshold.room.game.bankSequence,before);
+    await threshold.guest.locator('#bankStatus').filter({hasText:'当前筹码须低于 2100'}).waitFor();
+    await transact(threshold,'repay',1);
+    assert.equal(await threshold.guest.locator('#bankBorrowBtn').isEnabled(),true);
+    assert.deepEqual(errors,[]);console.log('Bank UI passed: 4 two-client tables, 6 hands, buy-in threshold boundary, forged rejection, repayment, refresh and worker odds.');
   }finally{await browser.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

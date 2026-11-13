@@ -23,6 +23,7 @@ class Accounts {
     this.directory = path.join(root, 'accounts');
     this.byNumber = new Map();
     this.byUid = new Map();
+    this.profileRevision = 0;
     for (const record of readRecords(this.directory)) this.remember(record);
     this.sessions = new Map();
     this.attempts = new Map();
@@ -108,6 +109,7 @@ class Accounts {
     if (!name || name.length > 32 || !Avatars.valid(avatar)) throw error(400, '昵称须为1至32个字符，并选择有效头像');
     const updated = { ...record, name, avatar };
     this.save(updated);
+    this.profileRevision++;
     return profile(updated);
   }
 

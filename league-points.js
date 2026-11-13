@@ -1,4 +1,4 @@
-const { empty, scores, title } = require('./match-stats');
+const { empty, scores, title, RATING_VERSION } = require('./match-stats');
 
 const close = value => Math.abs(value) < 1e-9 ? 0 : value;
 const compareRecord = (a, b) => close(b.average - a.average) || close(b.bb100 - a.bb100);
@@ -27,7 +27,7 @@ function aggregate(league, matches, netPoints = false) {
     const mvpUids = new Set(participants.filter(player => !close(player.bb - highest)).map(player => player.uid));
     for (const player of netPoints ? participants : match.players) {
       if (!playerRows.has(player.uid)) playerRows.set(player.uid, { uid: player.uid, matches: 0, hands: 0, profit: 0, bb: 0, points: 0,
-        mvps: 0, knockouts: 0, knockoutMatches: 0, metrics: empty() });
+        mvps: 0, knockouts: 0, knockoutMatches: 0, ratings: new Map() });
       const row = playerRows.get(player.uid);
       row.name = player.name;
       row.avatar = player.avatar;
@@ -39,9 +39,13 @@ function aggregate(league, matches, netPoints = false) {
       }
       for (const field of ['hands', 'profit', 'bb']) row[field] += player[field];
       row.points += netPoints ? player.bb : player.points;
-      for (const key of Object.keys(row.metrics)) {
-        row.metrics[key].total += player.metrics[key].total;
-        row.metrics[key].samples += player.metrics[key].samples;
+      const version = match.ratingVersion ?? 1;
+      if (!row.ratings.has(version)) row.ratings.set(version, { hands: 0, metrics: empty() });
+      const rating = row.ratings.get(version);
+      rating.hands += player.hands;
+      for (const key of Object.keys(rating.metrics)) {
+        rating.metrics[key].total += player.metrics[key].total;
+        rating.metrics[key].samples += player.metrics[key].samples;
       }
       const team = teamRows.get(player.teamId);
       if (!team) continue;
@@ -82,9 +86,11 @@ function aggregate(league, matches, netPoints = false) {
     ledger.push({ id: match.id, teams: [...teams.values()], mvpUids: [...mvpUids] });
   }
   const players = [...playerRows.values()].map(row => {
-    const values = scores(row.metrics, row.hands);
-    const { metrics, ...rest } = row;
-    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, title: title(values) };
+    const { ratings, ...rest } = row;
+    const ratingVersion = ratings.has(RATING_VERSION) ? RATING_VERSION : 1;
+    const rating = ratings.get(ratingVersion);
+    const values = scores(rating.metrics, rating.hands, ratingVersion);
+    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(values) };
   });
   const teams = [...teamRows.values()].map(({ contributions, ...row }) => {
     const eligible = [...contributions.values()].filter(player => player.matches >= league.minMatches).sort((a, b) => b.bb - a.bb);

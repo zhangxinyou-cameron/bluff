@@ -1,6 +1,7 @@
 const { error, profile } = require('./accounts');
 const { readFile } = require('node:fs/promises');
 const { loginDestination } = require('./access');
+const { scores, RATING_VERSION } = require('./match-stats');
 
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -85,7 +86,11 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
         else if (!report.players.some(player => player.uid === uid)) throw error(404, '赛报不存在');
       } else if (!report.players.some(player => player.uid === uid)) throw error(404, '赛报不存在');
       const { players, ...summary } = report;
-      json(res, { ...summary, players: players.map(({ metrics, ...row }) => row) });
+      const ratingVersion = report.ratingVersion ?? 1;
+      json(res, { ...summary, ratingVersion, players: players.map(({ metrics, ...row }) => {
+        if (ratingVersion >= RATING_VERSION) return row;
+        return { ...row, values: scores(metrics, row.hands, ratingVersion) };
+      }) });
     } else {
       const reports = [...stats.matches.values()].filter(report => report.status === 'completed' && report.players.some(row => row.uid === uid))
         .sort((a, b) => b.endedAt - a.endedAt);
@@ -121,7 +126,10 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
       }
       json(res, result);
     } else if (url.searchParams.has('match')) json(res, leagues.matchView(url.searchParams.get('match'), uid));
-    else if (url.searchParams.has('code')) json(res, leagues.detail(leagues.league(url.searchParams.get('code'), uid), uid, code => rooms.games.get(code)));
+    else if (url.searchParams.has('code')) {
+      const league = leagues.league(url.searchParams.get('code'), uid);
+      json(res, leagues.detail(league, uid, code => rooms.games.get(code), url.searchParams.get('since')));
+    }
     else json(res, { leagues: leagues.list(uid) });
     return true;
   }

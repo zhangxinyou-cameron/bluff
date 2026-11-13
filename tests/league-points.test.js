@@ -40,7 +40,7 @@ test('six-dimensional results require enough hands and valid samples and can be 
   assert.equal(scores(metrics, 9).courage.score, null);
   const result = scores(metrics, 10);
   assert.equal(result.luck.score, null);
-  assert.equal(result.courage.score, 80);
+  assert.equal(result.courage.score, 4.2);
   assert.equal(title(result), '胆大心细');
   const league = { minHands: 1, minMatches: 1, teams: [] };
   const first = match('1', 20, [['a', null, 0, 50]]);
@@ -48,7 +48,49 @@ test('six-dimensional results require enough hands and valid samples and can be 
   first.players[0].metrics.calculation = { total: 5, samples: 5 };
   second.players[0].metrics.calculation = { total: 5, samples: 15 };
   const { players } = aggregate(league, [first, second]);
-  assert.deepEqual(players[0].values.calculation, { score: 50, samples: 20, observed: 10 });
+  assert.deepEqual(players[0].values.calculation, { score: 3, samples: 20, observed: 10 });
+});
+
+test('rating maps 0, neutral and 1 to 1, 3 and 5, and separates historical observations from new ones', () => {
+  const league = { minHands: 1, minMatches: 1, teams: [] };
+  const first = match('1', 20, [['a', null, 20, 0]]);
+  const second = match('2', 20, [['a', null, -20, 0]], { ratingVersion: 2 });
+  first.players[0].metrics.stability = { total: 5, samples: 5 };
+  second.players[0].metrics.stability = { total: 0, samples: 5 };
+  second.players[0].metrics.courage = { total: 2.5, samples: 5 };
+  assert.equal(aggregate(league, [first], true).players[0].values.stability.score, 5);
+  const player = aggregate(league, [first, second], true).players[0];
+  assert.equal(player.values.stability.score, 1);
+  assert.deepEqual(player.values.courage, { score: 3, samples: 5, observed: null });
+  assert.equal(player.ratingVersion, 2);
+  assert.equal(player.matches, 2);
+  assert.equal(player.points, 0);
+});
+
+test('decision scoring rewards priced folds, real pressure and effective risk', () => {
+  const stats = Object.create(MatchStats.prototype);
+  const metrics = empty();
+  const hand = { courage: new Map(), lastPressure: null };
+  const room = { statistics: { hand, players: new Map([[0, { metrics }]]) } };
+  const [ace, king, queen, jack, ten] = [14, 13, 12, 11, 10].map(rank => ({ suit: 0, rank }));
+  const weakView = {
+    seatId: 0, phase: 'river', variant: 'standard', actions: [],
+    hole: [{ rank: 2, suit: 1 }, { rank: 3, suit: 2 }], board: [ace, king, queen, jack, { rank: 9, suit: 1 }],
+    currentBet: 80, bigBlind: 20,
+    players: [{ id: 0, isActive: true, chips: 300, currentBet: 0, totalBet: 20 },
+      { id: 1, isActive: true, chips: 220, currentBet: 80, totalBet: 100 }]
+  };
+  const strongView = { ...weakView, hole: [ten, { rank: 3, suit: 2 }] };
+  const decision = { canRaise: true, effective: 300, priced: true, priceMatters: true, potOdds: 0.4, seed: 123, view: weakView };
+  stats.action(room, 0, decision, 'fold', 0, false);
+  stats.action(room, 0, { ...decision, view: strongView }, 'call', 80, false);
+  stats.action(room, 0, { ...decision, bluff: true, priced: false }, 'raise', 150, true);
+  assert.deepEqual(metrics.calculation, { samples: 2, total: 2 });
+  assert.deepEqual(metrics.stability, { samples: 1, total: 1 });
+  assert.deepEqual(metrics.strategy, { samples: 1, total: 0 });
+  assert.deepEqual(metrics.attack, { samples: 3, total: 1 });
+  assert.equal(hand.courage.get(0), 1);
+  assert.equal(hand.lastPressure, 0);
 });
 
 test('net BB counts actual hands only and adds uneven team contributions without changing absentees', () => {

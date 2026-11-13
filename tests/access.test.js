@@ -78,6 +78,21 @@ test('password protection covers HTTP, files, WebSockets and session revocation'
     assert.equal((await fetch(base + '/data/access.json', { headers: { Cookie: cookie } })).status, 404);
     assert.equal((await fetch(base + '/%FF', { headers: { Cookie: cookie } })).status, 400);
   });
+  await t.test('assets compress and revalidate only after password authorization', async () => {
+    const url = base + '/table-page.js';
+    const headers = { Cookie: cookie, 'Accept-Encoding': 'gzip' };
+    const file = await fetch(url, { headers });
+    assert.equal(file.headers.get('content-encoding'), 'gzip');
+    assert.equal(file.headers.get('cache-control'), 'private, no-cache');
+    const etag = file.headers.get('etag');
+    const source = await file.text();
+    assert.ok(Number(file.headers.get('content-length')) < Buffer.byteLength(source));
+    assert.equal((await fetch(url, { headers: { ...headers, 'If-None-Match': etag } })).status, 304);
+    assert.equal((await fetch(url, { headers: { 'If-None-Match': etag } })).status, 401);
+    const identity = await fetch(url, { method: 'HEAD', headers: { ...headers, 'Accept-Encoding': 'gzip;q=0' } });
+    assert.equal(identity.headers.get('content-encoding'), null);
+    assert.equal(Number(identity.headers.get('content-length')), Buffer.byteLength(source));
+  });
   await t.test('logout revokes both HTTP access and an already-open WebSocket', async () => {
     const ws = new WebSocket(base.replace('http:', 'ws:'), { headers: { Cookie: cookie } });
     await once(ws, 'open');

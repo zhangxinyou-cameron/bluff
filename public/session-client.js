@@ -114,7 +114,11 @@
       node('minPlayersSel').disabled=settings.allowBuyIn;
       node('showWinRateSel').value=settings.showWinRate===false?'no':'yes';node('showWinRateSel').disabled=!isHost;
       node('runoutDelaySel').value=String(settings.runoutDelayMs??3000);node('runoutDelaySel').disabled=!isHost;
-      for(const [id,key]of [['loanPerHandLimit','loanPerHandLimit'],['loanTotalLimit','loanTotalLimit']]){if(document.activeElement!==node(id))node(id).value=settings[key]==null?'无限':String(settings[key]);node(id).disabled=!isHost||!settings.allowBuyIn;}
+      for(const id of ['loanPerHandLimit','loanTotalLimit','buyInThreshold']){
+        const input=node(id);
+        if(document.activeElement!==input)input.value=settings[id]==null?(id==='buyInThreshold'?'不限':'无限'):String(settings[id]);
+        input.disabled=!isHost||!settings.allowBuyIn;
+      }
       const me=seats[mySeatId];
       setConnectionStatus(isHost?'房间已创建，等待玩家加入...':me?.ready?'已准备，等待房主开始游戏':'已连接房间，请点击准备');
       node('dealingStage').hidden=true;return;
@@ -306,7 +310,8 @@
   },1000);
   renderTimer=setInterval(()=>{if(!document.hidden)paint();},180);
   const previousLoad=window.onload;
-  window.onload=async()=>{
+  window.onload=null;
+  document.addEventListener('DOMContentLoaded',async()=>{
     try{
       identity=await window.RiverAccount.request('/api/me');
       if(identity.profile){
@@ -329,7 +334,7 @@
     const saved=safeRead(),match=location.hash.match(/room=(\d{6})/);
     if(saved&&(!match||match[1]===saved.roomCode)){const name=localStorage.getItem('starstone_name');if(name)myName=name;node('nameInput').value=myName;entry=saved;sequence=saved.commandSeq||0;roomCode=saved.roomCode;isHost=saved.isHost;showWaitScreen();connect();}
     else if(previousLoad)previousLoad();
-  };
+  });
   async function saveHomeAvatar(avatar){
     if(identity?.profile)identity=await window.RiverAccount.request('/api/me',{avatar});
     window.RiverAvatars.save(avatar);

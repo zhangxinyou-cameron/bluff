@@ -73,12 +73,12 @@ function makeRangeWeight(opponent,view){
     return aggressive?.22+.78*strength:.45+.55*strength;
   };
 }
-function estimateEquity(view,{samples=240,random=Math.random}={}){
+function estimateEquity(view,{samples=240,random=Math.random,exactRiver=true}={}){
   const ctx=context(view),opponents=equityOpponents(view,ctx),known=new Set([...view.hole,...view.board].map(c=>c.suit*13+c.rank));
   const available=E.createDeck(view.variant).filter(c=>!known.has(c.suit*13+c.rank)),myKnown=[...view.hole,...view.board];
   const weights=opponents.map(p=>makeRangeWeight(p,view));
   if(!opponents.length)return{equity:1,trials:0,modeledOpponents:0,exact:true};
-  if(view.board.length===5&&opponents.length===1){
+  if(exactRiver&&view.board.length===5&&opponents.length===1){
     const mine=score(myKnown,view.variant);let won=0,total=0;
     for(let i=0;i<available.length-1;i++)for(let j=i+1;j<available.length;j++){const hole=[available[i],available[j]],weight=weights[0](hole),other=score([...hole,...view.board],view.variant);total+=weight;won+=weight*(mine>other?1:mine===other?.5:0);}
     return{equity:won/total,trials:available.length*(available.length-1)/2,modeledOpponents:1,exact:true};

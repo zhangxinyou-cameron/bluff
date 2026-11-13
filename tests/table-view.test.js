@@ -4,8 +4,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const {test}=require('node:test');
 const E=require('../public/poker-engine');
-const html=fs.readFileSync(path.join(__dirname,'../public/index.html'),'utf8');
-const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script=fs.readFileSync(path.join(__dirname,'../public/table-page.js'),'utf8');
 
 function view(){
   const elements=new Map();

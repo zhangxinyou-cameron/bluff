@@ -1,4 +1,5 @@
-const { randomInt, randomUUID } = require('node:crypto');
+const { createHash, randomInt, randomUUID } = require('node:crypto');
+const { statSync } = require('node:fs');
 const path = require('node:path');
 const { error, profile } = require('./accounts');
 const { readRecords, writeRecord, deleteRecord } = require('./local-store');
@@ -17,6 +18,8 @@ class Leagues {
     this.directory = path.join(root, 'leagues');
     this.flagsDirectory = path.join(root, 'team-flags');
     this.leagues = new Map(readRecords(this.directory).map(record => [record.code, record]));
+    this.revision = 0;
+    this.instance = randomUUID();
     this.stats = stats;
     this.accounts = accounts;
     for (const league of this.leagues.values()) {
@@ -27,6 +30,7 @@ class Leagues {
   save(league) {
     writeRecord(this.directory, league.code, league);
     this.leagues.set(league.code, league);
+    this.revision++;
   }
 
   matches(league) {
@@ -60,8 +64,17 @@ class Leagues {
       .map(({ code, name, owner, endedAt }) => ({ code, name, owner, endedAt }));
   }
 
-  detail(league, uid, roomForCode) {
+  detail(league, uid, roomForCode, since) {
     const matches = this.matches(league);
+    const activeMatch = matches.find(active);
+    const activeRoom = activeMatch && roomForCode(activeMatch.code);
+    const seats = activeRoom ? [...activeRoom.people.values()].filter(person => person.connected && !person.retired)
+      .map(({ uid, name, avatar, id, ready }) => ({ uid, name, avatar, host: id === 0, ready: id === 0 || ready })) : [];
+    const flagsChangedAt = statSync(this.flagsDirectory, { throwIfNoEntry: false })?.mtimeMs;
+    const revision = createHash('sha256').update(JSON.stringify([
+      this.instance, league.code, uid, this.revision, this.stats.revision, this.accounts.profileRevision, flagsChangedAt, seats
+    ])).digest('base64url');
+    if (since === revision) return { revision };
     const version = scoreFormat(league);
     const format = version === NET_FORMAT ? points : formats.get(version);
     if (!format) throw error(503, '当前联赛规则版本未安装');
@@ -69,22 +82,20 @@ class Leagues {
     const flags = flagCatalog(this.flagsDirectory);
     const flagIds = new Set(flags.map(flag => flag.id));
     const personalMvps = new Set(ledger.filter(entry => entry.mvpUids?.includes(uid)).map(entry => entry.id));
-    return { ...league, format: version, teamCount: league.teamCount || 16, teamSize: league.teamSize || 8,
+    return { ...league, revision, format: version, teamCount: league.teamCount || 16, teamSize: league.teamSize || 8,
       flags,
       members: league.members.map(id => profile(this.accounts.byUid.get(id))),
       teams: league.teams.map(team => ({ ...team, flagId: flagIds.has(team.flagId) ? team.flagId : defaultFlagId,
         requests: team.captain === uid ? team.requests : team.requests.filter(id => id === uid) })),
       matches: matches.map(({ players, ...match }) => {
-        const room = active(match) ? roomForCode(match.code) : null;
-        const seats = room ? [...room.people.values()].filter(person => person.connected && !person.retired)
-          .map(({ uid, name, avatar, id, ready }) => ({ uid, name, avatar, host: id === 0, ready: id === 0 || ready })) : [];
+        const room = match.id === activeMatch?.id ? activeRoom : null;
         const personal = players?.find(player => player.uid === uid);
         return { ...match, participantCount: players?.length ?? (room ? seats.length : (match.participantUids?.length || 0)),
           ...(personal ? { myResult: { bb: personal.bb, hands: personal.hands, mvp: personalMvps.has(match.id),
             knockouts: personal.knockouts ?? null } } : {}),
           ...(room ? { seats, capacity: room.maxPlayers } : {}) };
       }),
-      locked: league.members.filter(id => this.locked(league, id)), players, teamStandings, ledger };
+      locked: this.lockedMembers(league, matches), players, teamStandings, ledger };
   }
 
   matchForCode(code) {
@@ -108,10 +119,14 @@ class Leagues {
     return this.leagues.get(code)?.teams.find(team => team.members.includes(uid))?.id ?? null;
   }
 
-  locked(league, uid) {
-    return this.matches(league).some(match => match.status === 'completed' &&
-      match.hands >= (scoreFormat(league) === NET_FORMAT ? 1 : league.minHands) &&
-      match.players.some(player => player.uid === uid && player.teamId));
+  lockedMembers(league, matches) {
+    const minimum = scoreFormat(league) === NET_FORMAT ? 1 : league.minHands;
+    const locked = new Set();
+    for (const match of matches) {
+      if (match.status !== 'completed' || match.hands < minimum) continue;
+      for (const player of match.players) if (player.teamId) locked.add(player.uid);
+    }
+    return league.members.filter(uid => locked.has(uid));
   }
 
   command(uid, data, roomExists) {
@@ -212,7 +227,7 @@ class Leagues {
       }
       for (const row of data.accept === true ? league.teams : [team]) row.requests = row.requests.filter(id => id !== target);
     } else if (data.action === 'leaveTeam') {
-      if (!mine || this.locked(league, uid)) throw error(409, '已为该队打完计分场，本届联赛锁队');
+      if (!mine || this.lockedMembers(league, this.matches(league)).includes(uid)) throw error(409, '已为该队打完计分场，本届联赛锁队');
       mine.members = mine.members.filter(id => id !== uid);
       if (!mine.members.length) league.teams = league.teams.filter(row => row !== mine);
       else if (mine.captain === uid) mine.captain = mine.members[0];

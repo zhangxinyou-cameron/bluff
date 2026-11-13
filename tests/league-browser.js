@@ -245,11 +245,15 @@ async function main() {
     await idle(host);
     await pages[2].goto(base + '/club.html?league=' + code);
     await pages[2].locator('.club-match .club-metric').filter({ hasText: '1 / 2' }).waitFor();
+    const waiting = await detail(pages[2], code);
+    const unchangedUrl = '/api/league?code=' + code + '&since=' + encodeURIComponent(waiting.revision);
+    assert.deepEqual(await api(pages[2], unchangedUrl), { revision: waiting.revision });
     assert.equal(await memberHost.locator('#startBtn').isDisabled(), true);
     await host.locator('#readyBtn').click();
     await idle(host);
     await memberHost.locator('#leagueReadyState').filter({ hasText: '全员已准备' }).waitFor();
     await pages[2].locator('.club-match .club-metric').filter({ hasText: '2 / 2' }).waitFor();
+    assert.notEqual((await api(pages[2], unchangedUrl)).revision, waiting.revision);
     await settings(memberHost, 'allowBuyInSel', 'yes');
     await settings(memberHost, 'deckModeSel', 'standard');
     await settings(memberHost, 'bigBlindSel', '50');
@@ -285,6 +289,17 @@ async function main() {
     assert.equal(await finish(memberHost), second.id);
     const result = await api(host, '/api/reports?id=' + second.id);
     assert.equal(result.rules.bigBlind, 50);
+    assert.equal(result.ratingVersion, 2);
+    const archivedId = '4f178643-48ba-4c79-aad0-48347dc61e6f';
+    const saved = services.stats.matches.get(second.id);
+    services.stats.save({ ...saved, id: archivedId, leagueCode: null, ratingVersion: undefined,
+      players: saved.players.map(player => ({ ...player, hands: 10, title: '稳健派',
+        metrics: { ...player.metrics, stability: { total: 4, samples: 5 } } })) });
+    const historical = await api(host, '/api/reports?id=' + archivedId);
+    assert.equal(historical.ratingVersion, 1);
+    assert.deepEqual(historical.players[0].values.stability, { score: 4.2, samples: 5, observed: 4 });
+    assert.equal(historical.players[0].title, '稳健派');
+    services.stats.deleteMatches([archivedId]);
     assert.equal(result.players.find(player => player.uid === uids[0]).debt, 500);
     assert.equal(result.players.reduce((sum, player) => sum + player.profit, 0), 0);
     assert.ok(result.players.filter(player=>player.uid!==uids[3]).every(player => player.values.luck.samples === 1 && player.values.luck.score === null));

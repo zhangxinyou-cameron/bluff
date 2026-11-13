@@ -4,6 +4,8 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const { once } = require('node:events');
+const { gzip } = require('node:zlib');
+const { promisify } = require('node:util');
 const { WebSocketServer } = require('ws');
 const { AccessControl, promptStartupPassword } = require('./access');
 const { RoomManager } = require('./room-manager');
@@ -33,6 +35,60 @@ const MIME = {
 const access = new AccessControl();
 let accounts, stats, leagues;
 const publicRoot = path.resolve(__dirname, 'public');
+const compress = promisify(gzip);
+const compressedAssets = new Map();
+
+async function serveAsset(req, res, filePath) {
+  if (!['GET', 'HEAD'].includes(req.method)) {
+    res.writeHead(405, { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' }).end();
+    return;
+  }
+  const extension = path.extname(filePath);
+  const text = ['.css', '.js', '.html', '.json', '.svg'].includes(extension);
+  const acceptsGzip = req.headers['accept-encoding']?.split(',').some(value => {
+    const [name, quality] = value.trim().toLowerCase().split(/\s*;\s*/);
+    return name === 'gzip' && (quality === undefined || quality.startsWith('q=') && Number(quality.slice(2)) > 0);
+  });
+  const encoded = text && acceptsGzip;
+  const stat = await fs.promises.stat(filePath);
+  if (!stat.isFile()) { res.writeHead(404, { 'Cache-Control': 'no-store' }).end('Not found'); return; }
+  const stamp = `${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}`;
+  const etag = `"${stamp}${encoded ? '-gzip' : ''}"`;
+  const headers = { 'Content-Type': MIME[extension] || 'application/octet-stream',
+    'Cache-Control': extension === '.html' ? 'no-store' : 'private, no-cache', ETag: etag };
+  if (text) headers.Vary = 'Accept-Encoding';
+  if (req.headers['if-none-match']?.split(',').some(tag => ['*', etag, 'W/' + etag].includes(tag.trim()))) {
+    res.writeHead(304, headers).end();
+    return;
+  }
+  if (encoded) {
+    let cached = compressedAssets.get(filePath);
+    if (cached?.stamp !== stamp) {
+      cached = { stamp, body: fs.promises.readFile(filePath).then(bytes => compress(bytes)) };
+      compressedAssets.set(filePath, cached);
+      cached.body.catch(() => { if (compressedAssets.get(filePath) === cached) compressedAssets.delete(filePath); });
+    }
+    const body = await cached.body;
+    res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip', 'Content-Length': body.length });
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return;
+  }
+  if (req.method === 'HEAD') {
+    res.writeHead(200, { ...headers, 'Content-Length': stat.size }).end();
+    return;
+  }
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', () => {
+    if (!res.headersSent) res.writeHead(404, { 'Cache-Control': 'no-store' }).end('Not found');
+    else res.destroy();
+  });
+  res.on('close', () => stream.destroy());
+  stream.once('open', () => {
+    res.writeHead(200, { ...headers, 'Content-Length': stat.size });
+    stream.pipe(res);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
@@ -61,16 +117,11 @@ const server = http.createServer(async (req, res) => {
   if (!filePath.startsWith(publicRoot + path.sep)) {
     res.writeHead(403); res.end('Forbidden'); return;
   }
-  const ext = path.extname(filePath);
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404);
-      res.end('Not found');
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });
-    res.end(data);
-  });
+  try { await serveAsset(req, res, filePath); }
+  catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') res.writeHead(404, { 'Cache-Control': 'no-store' }).end('Not found');
+    else res.writeHead(500, { 'Cache-Control': 'no-store' }).end('Asset unavailable');
+  }
 });
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 65536 });

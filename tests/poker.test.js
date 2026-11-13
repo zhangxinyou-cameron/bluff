@@ -14,7 +14,7 @@ class AuthenticatedSocket extends WebSocket {
 }
 
 const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script = fs.readFileSync(path.join(__dirname, '../public/table-page.js'), 'utf8');
 
 // Run the actual page script in independent browser-like contexts with real sockets.
 // DOM rendering is recorded; no game or networking functions are replaced.
@@ -24,13 +24,14 @@ function page(baseUrl, hash = '', Socket = AuthenticatedSocket) {
     addEventListener() {}, focus() {}
   }]));
   const errors = [];
+  let documentReady;
   const timers = new Set();
   const location = new URL(baseUrl + hash);
   const context = vm.createContext({
     PokerEngine: require('../public/poker-engine'),
     WebSocket: Socket, location,
     document: {
-      addEventListener(){},
+      addEventListener(name, callback){ if (name === 'DOMContentLoaded') documentReady = callback; },
       getElementById(id) {
         assert.ok(elements.has(id), `Unknown DOM element: ${id}`);
         return elements.get(id);
@@ -60,6 +61,7 @@ function page(baseUrl, hash = '', Socket = AuthenticatedSocket) {
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../public/session-client.js'),'utf8'),context);
   return {
     elements, errors,
+    ready() { return documentReady(); },
     run(code) { return vm.runInContext(code, context); },
     click(id) { assert.equal(elements.get(id).disabled, false); return elements.get(id).onclick(); },
     close() {
@@ -126,7 +128,7 @@ test('room connection and readiness regression', async t => {
 
   await t.test('share URL automatically joins through the same WebSocket connection', async () => {
     shared = open('#room=' + roomCode);
-    shared.run('window.onload()');
+    shared.ready();
     await until(() => shared.run('mySeatId') === 2 && manual.run('!!seats[2]'), 'share join and seat broadcast');
     assert.equal(shared.elements.get('readyBtn').disabled, false);
   });
@@ -151,7 +153,7 @@ test('room connection and readiness regression', async t => {
     manual.run('RiverSession.leave({reload:false,permanent:true})');manual.close();
     await until(() => host.run('seats[1] === null') && shared.run('seats[1] === null'), 'leave synchronization');
     replacement = open('#room=' + roomCode);
-    replacement.run('window.onload()');
+    replacement.ready();
     await until(() => replacement.run('mySeatId') === 1 && shared.run('!!seats[1]'), 'replacement join');
     assert.equal(host.run('seats[1].ready'), false);
     assert.equal(host.elements.get('startBtn').disabled, true);
@@ -171,7 +173,7 @@ test('room connection and readiness regression', async t => {
 
   await t.test('nonexistent room reports failure and does not enable readiness', async () => {
     const missing = open('#room=' + (roomCode === '999999' ? '999998' : '999999'));
-    missing.run('window.onload()');
+    missing.ready();
     await until(() => missing.elements.get('waitTip').textContent.includes('房间不存在'), 'missing room error');
     assert.equal(missing.elements.get('readyBtn').disabled, true);
     assert.equal(missing.run('mySeatId'), -1);

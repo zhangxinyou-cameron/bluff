@@ -5,29 +5,35 @@ const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
 const dimensions = ['luck', 'strategy', 'calculation', 'courage', 'attack', 'stability'];
+const RATING_VERSION = 2;
 const empty = () => Object.fromEntries(dimensions.map(key => [key, { total: 0, samples: 0 }]));
+const clamp = value => Math.max(0, Math.min(1, value));
 
 function add(metrics, key, value) {
   metrics[key].samples++;
   metrics[key].total += value;
 }
 
-function scores(metrics, hands) {
+function scores(metrics, hands, version = RATING_VERSION) {
   return Object.fromEntries(dimensions.map(key => {
     const { total, samples } = metrics[key];
     if (hands < 10 || samples < 5) return [key, { score: null, samples }];
-    return [key, { score: Math.round(100 * total / samples), samples, observed: key === 'luck' ? null : total }];
+    const continuous = key === 'luck' || (key === 'courage' && version >= RATING_VERSION);
+    const score = Math.round(10 + 40 * clamp(total / samples)) / 10;
+    return [key, { score, samples, observed: continuous ? null : total }];
   }));
 }
 
 function title(values) {
-  const high = key => values[key].score !== null && values[key].score >= 70;
-  if (high('luck')) return '好运连连';
-  if (high('strategy')) return '偷鸡摸狗';
-  if (high('courage') && high('calculation')) return '胆大心细';
-  if (high('stability')) return '稳健派';
-  if (high('attack')) return '主动进攻';
-  return null;
+  const { luck, strategy, calculation, courage, attack, stability } = values;
+  const candidates = [
+    ['好运连连', luck.score, 3.8],
+    ['偷鸡摸狗', strategy.score, 3.8],
+    ['胆大心细', Math.min(courage.score ?? 0, calculation.score ?? 0), 3.5],
+    ['稳健派', stability.score, 3.8],
+    ['主动进攻', attack.score, 3.8]
+  ];
+  return candidates.filter(([, score, minimum]) => score >= minimum).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
 function seededRandom(seed) {
@@ -68,6 +74,7 @@ class MatchStats {
   constructor(root) {
     this.directory = path.join(root, 'matches');
     this.matches = new Map(readRecords(this.directory).map(record => [record.id, record]));
+    this.revision = 0;
     for (const match of this.matches.values()) {
       if (['waiting', 'running'].includes(match.status)) this.save({ ...match, status: 'interrupted', endedAt: Date.now() });
     }
@@ -76,10 +83,12 @@ class MatchStats {
   save(match) {
     writeRecord(this.directory, match.id, match);
     this.matches.set(match.id, match);
+    this.revision++;
     return match;
   }
 
   deleteMatches(ids) {
+    this.revision++;
     for (const id of ids) this.matches.delete(id);
     for (const id of ids) deleteRecord(this.directory, id);
   }
@@ -105,42 +114,52 @@ class MatchStats {
         teamId: teamForUid(person.uid) ?? null, hands: 0, knockouts: 0, metrics: empty() });
     }
     room.statistics.hand = {
-      number: g.handNumber, forced: new Map(g.players.map(p => [p.id, p.totalBet])),
-      participating,
-      voluntary: new Map(), lastPressure: null, lockBoard: null
+      number: g.handNumber, participating, courage: new Map(), lastPressure: null, lockBoard: null
     };
   }
 
-  beforeAction(room, player, action, automatic) {
+  beforeAction(room, player, action, amount, automatic, expected) {
     const g = room.game;
     if (automatic || !player || !room.statistics?.players.has(player.id) || !E.betting(g) ||
         g.players[g.currentPlayerIndex] !== player) return null;
-    const canRaise = E.canRaise(g, player);
+    if (expected && (expected.handNumber !== g.handNumber || expected.revision !== g.revision)) return null;
     const need = Math.min(player.chips, Math.max(0, g.currentBet - player.currentBet));
-    const aggressive = action === 'raise' || action === 'allin' && player.chips > need;
-    let weak = false, correct = null;
-    if (g.communityCards.length && (aggressive || need > 0 && ['call', 'fold'].includes(action))) {
-      const view = AI.observe(g, player.id, room.history);
-      const cap = player.totalBet + need;
-      const odds = need / (need + g.players.reduce((sum, other) => sum + Math.min(other.totalBet, cap), 0));
-      const estimate = AI.estimateEquity(view, { samples: 64, random: seededRandom(g.revision + 91) }).equity;
-      weak = aggressive && estimate < 0.30;
-      if (!aggressive && Math.abs(estimate - odds) >= 0.07) correct = (estimate >= odds) === (action === 'call');
-    }
-    return { canRaise, aggressive, weak, correct, stack: player.chips };
+    const opponents = g.players.filter(other => other !== player && other.isActive && !other.folded);
+    const canRaise = player.chips > need && E.canRaise(g, player);
+    const cap = player.totalBet + need;
+    const contestable = g.players.reduce((sum, other) => sum + Math.min(other.totalBet, cap), 0) + need;
+    const effective = Math.min(player.chips, Math.max(0, ...opponents.map(other => other.chips + other.currentBet - player.currentBet)));
+    const sizing = action === 'allin' ? player.chips : action === 'raise' ? amount - player.currentBet : 0;
+    const bluff = g.communityCards.length >= 3 && canRaise && opponents.length <= 2 &&
+      opponents.every(other => !other.allIn) && Math.min(sizing, effective) - need >= Math.max(g.bigBlind, contestable / 4);
+    const priced = g.communityCards.length >= 3 && need > 0 &&
+      (['call', 'fold'].includes(action) || action === 'allin' && sizing === need);
+    return { canRaise, effective, need, potOdds: need / Math.max(1, contestable), priceMatters: need >= Math.max(g.bigBlind, player.chips / 10),
+      bluff, priced, view: bluff || priced ? AI.observe(g, player.id, room.history) : null, seed: g.revision + 91 };
   }
 
-  action(room, seat, decision, paid, raised) {
+  action(room, seat, decision, action, paid, raised) {
     const stats = room.statistics, hand = stats?.hand;
     if (!hand) return;
-    if (raised) hand.lastPressure = decision?.weak ? seat : null;
+    if (raised) hand.lastPressure = null;
     if (!decision) return;
     const { metrics } = stats.players.get(seat);
-    add(metrics, 'courage', Number(paid >= decision.stack / 4));
-    if (decision.canRaise) add(metrics, 'attack', Number(decision.aggressive));
-    if (decision.weak) add(metrics, 'strategy', 0);
-    if (decision.correct !== null) add(metrics, 'calculation', Number(decision.correct));
-    hand.voluntary.set(seat, (hand.voluntary.get(seat) || 0) + paid);
+    if (decision.effective > 0) {
+      const risk = clamp(Math.min(paid, decision.effective) / decision.effective * 2);
+      hand.courage.set(seat, Math.max(hand.courage.get(seat) ?? 0, risk));
+    }
+    if (decision.canRaise) add(metrics, 'attack', Number(raised));
+    if (!decision.view) return;
+    const { equity } = AI.estimateEquity(decision.view, { samples: 96, exactRiver: false, random: seededRandom(decision.seed) });
+    if (raised && decision.bluff && equity < 0.65 / decision.view.players.filter(player => player.isActive && !player.folded).length) {
+      add(metrics, 'strategy', 0);
+      hand.lastPressure = seat;
+    }
+    const edge = equity - decision.potOdds;
+    if (decision.priced && Math.abs(edge) >= 0.10) {
+      add(metrics, 'calculation', Number((edge > 0) === (action !== 'fold')));
+      if (decision.priceMatters && edge < 0) add(metrics, 'stability', Number(action === 'fold'));
+    }
   }
 
   lock(room) {
@@ -156,13 +175,13 @@ class MatchStats {
       if (!hand.participating.has(seat)) continue;
       const player = g.players.find(p => p.id === seat);
       row.hands++;
-      const voluntary = Math.min(hand.voluntary.get(seat) || 0, Math.max(0, player.totalBet - hand.forced.get(seat)));
-      add(row.metrics, 'stability', Number(voluntary <= player.chipsBeforeHand / 3));
+      if (hand.courage.has(seat)) add(row.metrics, 'courage', hand.courage.get(seat));
       if (!g.showdownOccurred && hand.lastPressure === seat && g.winners.includes(seat)) row.metrics.strategy.total++;
       if (expected?.has(seat)) {
         const contested = g.pots.reduce((sum, pot, index) => sum + (g.potEligibility[index].includes(seat) && g.potEligibility[index].length > 1 ? pot.amount : 0), 0);
-        const actual = g.pots.reduce((sum, pot) => sum + (pot.awards.find(a => a.seatId === seat)?.amount || 0), 0);
-        if (contested) add(row.metrics, 'luck', Math.min(1, Math.max(0, 0.5 + (actual - expected.get(seat)) / (2 * contested))));
+        const actual = g.pots.reduce((sum, pot, index) => sum + (g.potEligibility[index].length > 1 ?
+          (pot.awards.find(a => a.seatId === seat)?.amount || 0) : 0), 0);
+        if (contested) add(row.metrics, 'luck', clamp(0.5 + (actual - expected.get(seat)) / (2 * contested)));
       }
       if (!g.allowBuyIn && player.eliminatedHand === hand.number) {
         const potIndex = g.potEligibility.findLastIndex(seats => seats.includes(seat));
@@ -199,9 +218,9 @@ class MatchStats {
     }
     this.save({ ...prior, id: stats.id, status: 'completed', endedAt: Date.now(), startedAt: stats.startedAt,
       rules: stats.rules, hands: stats.hands, players, participantUids: players.map(player => player.uid),
-      scoringVersion: prior?.scoringVersion ?? 1 });
+      scoringVersion: prior?.scoringVersion ?? 1, ratingVersion: RATING_VERSION });
     room.reportId = stats.id;
   }
 }
 
-module.exports = { MatchStats, dimensions, empty, scores, title };
+module.exports = { MatchStats, RATING_VERSION, dimensions, empty, scores, title };

@@ -80,7 +80,7 @@ function cmpHand(a,b) {
   function createGame(players, bigBlind, options = {}) {
     return { players: players.slice().sort((a,b)=>a.id-b.id).map(p => ({ ...p, holeCards: [], currentBet: 0, totalBet: 0, eliminatedHand: null, eliminationStack: null,
       initialChips:p.chips,bankDebt:0,totalBorrowed:0,totalRepaid:0,bankVersion:0,lastBankRequest:null,chipsAfterHand:null,borrowHandNumber:-1,borrowedThisHand:0 })),
-      allowBuyIn:options.allowBuyIn===true,loanPerHandLimit:validLoanLimit(options.loanPerHandLimit)?options.loanPerHandLimit??null:null,loanTotalLimit:validLoanLimit(options.loanTotalLimit)?options.loanTotalLimit??null:null,hostSeatId:options.hostSeatId??0,endRequested:false,bankLog:[],bankSequence:0,
+      allowBuyIn:options.allowBuyIn===true,buyInThreshold:validLoanLimit(options.buyInThreshold)?options.buyInThreshold??null:null,loanPerHandLimit:validLoanLimit(options.loanPerHandLimit)?options.loanPerHandLimit??null:null,loanTotalLimit:validLoanLimit(options.loanTotalLimit)?options.loanTotalLimit??null:null,hostSeatId:options.hostSeatId??0,endRequested:false,bankLog:[],bankSequence:0,
       showWinRate:options.showWinRate!==false,autoDeck:options.autoDeck===true,deckMode:options.deckMode||'auto',variant:'standard',blindMode:options.blindMode||'auto',blindRule:'standard',blindSeats:null,runTwiceEnabled:options.runTwiceEnabled===true,
       initialTotal:players.reduce((sum,p)=>sum+p.chips,0),
       deck: [], communityCards: [], pot: 0, currentBet: 0, minRaise: bigBlind,
@@ -335,7 +335,9 @@ function cmpHand(a,b) {
     return funded<2||(players.length>minPlayers&&funded<=minPlayers);
   }
   function validLoanLimit(value){return value==null||Number.isSafeInteger(value)&&value>=0;}
+  function belowBuyInThreshold(g,p){return g.buyInThreshold==null||p.chips<g.buyInThreshold;}
   function loanAllowance(g,p){
+    if(!belowBuyInThreshold(g,p))return 0;
     const used=p.borrowHandNumber===g.handNumber?p.borrowedThisHand||0:0;
     return Math.max(0,Math.min(g.loanPerHandLimit==null?Infinity:g.loanPerHandLimit-used,g.loanTotalLimit==null?Infinity:g.loanTotalLimit-p.bankDebt));
   }
@@ -352,6 +354,7 @@ function cmpHand(a,b) {
       return fail('重复请求的金额或类型不一致');
     }
     if(expected.handNumber!==g.handNumber||expected.bankVersion!==p.bankVersion)return fail('账户或牌局已更新，请核对后重试');
+    if(kind==='borrow'&&!belowBuyInThreshold(g,p))return fail(`当前筹码须低于 ${g.buyInThreshold} 才能买入`);
     if(kind==='borrow'&&amount>loanAllowance(g,p))return fail('贷款超过本手剩余额度或总贷款剩余额度，请核对银行限额');
     if(kind==='repay'&&(amount>p.chips||amount>p.bankDebt))return fail('还款不能超过持有筹码或未还贷款');
     const delta=kind==='borrow'?amount:-amount;
@@ -380,5 +383,5 @@ function cmpHand(a,b) {
   function canRequestPeek(p) {
     return !!p&&!p.disconnected&&p.connected!==false&&((p.folded&&p.holeCards?.length===2)||(!p.isActive&&p.chips===0));
   }
-  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,sessionFinished,bankTransaction,requestSessionEnd,canRequestPeek,validLoanLimit,loanAllowance};
+  return {createDeck,shuffle,getCombos,eval5,evalBest,cmpHand,createGame,startHand,applyAction,canRaise,minimumRaiseTo,advance,endRound,settle,resolveRunout,disconnect,betting,confirmationPlayers,allConfirmed,confirmNextHand,standings,sessionFinished,bankTransaction,requestSessionEnd,canRequestPeek,validLoanLimit,loanAllowance,belowBuyInThreshold};
 });

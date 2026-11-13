@@ -8,7 +8,7 @@ const PHASE={pre_flop:'翻牌前',flop:'翻牌',turn:'转牌',river:'河牌',han
 const ACTION={fold:'弃牌 FOLD',check:'过牌 CHECK',call:'跟注 CALL',raise:'加注 RAISE',allin:'梭哈 ALL IN'};
 const STREET_NAME={3:'翻牌',4:'转牌',5:'河牌'};
 const cardText=cards=>cards.map(c=>'♠♥♣♦'[c.suit]+({11:'J',12:'Q',13:'K',14:'A'}[c.rank]||c.rank)).join(' ');
-const RULE_DEFAULTS={loanPerHandLimit:null,loanTotalLimit:null,runoutDelayMs:3000};
+const RULE_DEFAULTS={buyInThreshold:null,loanPerHandLimit:null,loanTotalLimit:null,runoutDelayMs:3000};
 const TABLE_LIMIT=8;
 const send=(ws,data)=>{if(ws?.readyState===1)ws.send(JSON.stringify(data));};
 const hash=token=>crypto.createHash('sha256').update(token).digest('hex');
@@ -128,7 +128,7 @@ class RoomManager {
     const reveal=['hand_over','showdown','tournament_over'].includes(g.phase);
     return{handNumber:g.handNumber,phase:g.phase,currentBet:g.currentBet,dealerIndex:g.dealerIndex,currentPlayerIndex:g.currentPlayerIndex,
       communityCards:frame?visible[frame.board]:g.communityCards,minRaise:g.minRaise,bigBlind:g.bigBlind,betLevel:g.betLevel,pot:frame?g.players.reduce((sum,p)=>sum+p.totalBet,0):g.pot,revision:g.revision,nextHandReady:g.nextHandReady,winners:frame?[]:g.winners,pots:frame?[]:g.pots,showWinRate:g.showWinRate!==false,
-      allowBuyIn:g.allowBuyIn,allowHostEnd:g.allowHostEnd===true,loanPerHandLimit:g.loanPerHandLimit,loanTotalLimit:g.loanTotalLimit,endRequested:g.endRequested,bankLog:g.bankLog,bankSequence:g.bankSequence,variant:g.variant,blindRule:g.blindRule,blindSeats:g.blindSeats,actionOrder:g.actionOrder,runoutBoards:g.runoutBoards?(frame?visible.slice(0,frame.board+1):g.runoutBoards):null,showdownOccurred:g.showdownOccurred===true,
+      allowBuyIn:g.allowBuyIn,allowHostEnd:g.allowHostEnd===true,buyInThreshold:g.buyInThreshold,loanPerHandLimit:g.loanPerHandLimit,loanTotalLimit:g.loanTotalLimit,endRequested:g.endRequested,bankLog:g.bankLog,bankSequence:g.bankSequence,variant:g.variant,blindRule:g.blindRule,blindSeats:g.blindSeats,actionOrder:g.actionOrder,runoutBoards:g.runoutBoards?(frame?visible.slice(0,frame.board+1):g.runoutBoards):null,showdownOccurred:g.showdownOccurred===true,
       players:g.players.map(p=>({id:p.id,name:p.name,avatar:p.avatar||'default',chips:frame&&Number.isSafeInteger(p.chipsBeforeHand)?p.chipsBeforeHand-p.totalBet:p.chips,currentBet:p.currentBet,totalBet:p.totalBet,folded:p.folded,allIn:p.allIn,isActive:p.isActive,
         handResult:frame?null:p.handResult,handResults:frame?null:p.handResults,acted:p.acted,canRaise:E.canRaise(g,p),disconnected:!!p.disconnected,connected:p.connected!==false,isAI:!!p.isAI,
         waitingForHand:!!p.waitingForHand,removeAfterHand:!!p.removeAfterHand,hasPlayed:p.hasPlayed,
@@ -207,9 +207,10 @@ class RoomManager {
       if(s.runoutDelayMs!==undefined&&(!Number.isInteger(s.runoutDelayMs)||s.runoutDelayMs<0||s.runoutDelayMs>3000))return fail('跑马发牌间隔须在0至3000毫秒之间');
       if(s.showWinRate!==undefined&&typeof s.showWinRate!=='boolean')return fail('是否显示胜率设置无效');
       if(!E.validLoanLimit(s.loanPerHandLimit)||!E.validLoanLimit(s.loanTotalLimit))return fail('贷款限额须为0或正整数，无限额请选无限');
+      if(!E.validLoanLimit(s.buyInThreshold))return fail('买入门槛须为0或正整数，也可设为不限');
       if(![10,20,50,100].includes(s.bigBlind)||![1000,2000,5000].includes(s.initChips)||![1,2,3].includes(s.minPlayers))return fail('房间设置无效');
       this.updateWaitingRules(room,{bigBlind:s.bigBlind,initChips:s.initChips,minPlayers:s.minPlayers,allowBuyIn:s.allowBuyIn===true,
-        showWinRate:s.showWinRate!==false,loanPerHandLimit:s.loanPerHandLimit??null,loanTotalLimit:s.loanTotalLimit??null,
+        showWinRate:s.showWinRate!==false,buyInThreshold:s.buyInThreshold??null,loanPerHandLimit:s.loanPerHandLimit??null,loanTotalLimit:s.loanTotalLimit??null,
         deckMode:['auto','short','standard'].includes(s.deckMode)?s.deckMode:room.settings.deckMode,
         blindMode:['auto','ante','position','standard'].includes(s.blindMode)?s.blindMode:room.settings.blindMode,runoutDelayMs:s.runoutDelayMs??3000});
       room.aiSlots={};for(let i=1;i<TABLE_LIMIT;i++)if(data.aiSlots?.[i]&&!room.people.has(i))room.aiSlots[i]=true;
@@ -229,7 +230,7 @@ class RoomManager {
       for(const key of Object.keys(room.aiSlots))if(room.aiSlots[key])players.push({id:Number(key),name:names[Number(key)-1],avatar:'robot',chips:room.settings.initChips,isAI:true,connected:true});
       if(players.length<2||players.length>8)return fail('请至少安排两人，最多8人');
       if(this.stats&&humans.every(person=>person.uid))this.stats.open(room,humans);
-      room.game=E.createGame(players,room.settings.bigBlind,{allowBuyIn:room.settings.allowBuyIn,showWinRate:room.settings.showWinRate,loanPerHandLimit:room.settings.loanPerHandLimit,loanTotalLimit:room.settings.loanTotalLimit,autoDeck:true,deckMode:room.settings.deckMode,blindMode:room.settings.blindMode,runTwiceEnabled:true});
+      room.game=E.createGame(players,room.settings.bigBlind,{...room.settings,autoDeck:true,runTwiceEnabled:true});
       room.nextSeatId=Math.max(0,...room.people.keys(),...players.map(player=>player.id))+1;
       room.game.allowHostEnd=true;
       this.start(room);return{ok:true};
@@ -304,7 +305,7 @@ class RoomManager {
   }
   act(room,seatId,action,amount,expected,automatic=false){
     const g=room.game,p=g.players.find(p=>p.id===seatId);const before=p&&{chips:p.chips,bet:p.currentBet,currentBet:g.currentBet,minRaise:g.minRaise,betLevel:g.betLevel||0,phase:g.phase,cards:g.communityCards.length};
-    const decision=this.stats?.beforeAction(room,p,action,automatic);
+    const decision=this.stats?.beforeAction(room,p,action,amount,automatic,expected);
     const result=E.applyAction(g,seatId,action,amount,expected);if(!result.ok)return result;
     const paid=action==='call'?Math.min(before.chips,Math.max(0,before.currentBet-before.bet)):action==='allin'?before.chips:action==='raise'?amount-before.bet:0;
     const level=before.bet+paid-before.currentBet>=before.minRaise&&['raise','allin'].includes(action)?before.betLevel+1:0;
@@ -315,7 +316,7 @@ class RoomManager {
     const amountLabel=displayAmount===null?'':`${action==='call'?' ':' 至 '}${displayAmount}`;
     const label=`${level?`${level}-BET · `:''}${ACTION[action]}${amountLabel}`;
     const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),displayAmount,betLevel:level,raised:before.bet+paid>before.currentBet,label,street:before.phase,automatic});
-    this.stats?.action(room,seatId,decision,paid,event.raised);
+    this.stats?.action(room,seatId,decision,action,paid,event.raised);
     // The closing action belongs in history, never in the new street's markers.
     if(g.phase===before.phase)p.lastAction={id:event.id,action,label,displayAmount,hand:g.handNumber,phase:before.phase,automatic};
     else for(const player of g.players)player.lastAction=null;

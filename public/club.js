@@ -6,11 +6,19 @@
   const leagueCode = params.get('league');
   const reportId = params.get('report');
   const dimensionNames = { luck: '运气', strategy: '博弈', calculation: '算力', courage: '胆量', attack: '进攻', stability: '稳健' };
-  const dimensionNotes = {
+  const legacyDimensionNotes = {
     luck: '下注锁定后的实际分池与预期分池', strategy: '翻后弱牌主动施压并拿下底池', calculation: '在赔率明确时作出符合估算的跟注或弃牌',
     courage: '一次主动投入至少行动前筹码的四分之一', attack: '有加注权时主动下注或加注', stability: '整手主动投入不超过开手筹码的三分之一'
   };
-  let identity, lastDetail, busy = false;
+  const dimensionNotes = {
+    luck: '下注锁定后，实际拿到的争议底池份额高于或低于期望',
+    strategy: '翻后用弱牌向一至两位可弃牌的对手施压，成功让对手弃牌',
+    calculation: '赔率差距明显时，跟注有利的牌或弃掉不划算的牌',
+    courage: '每手最大一次自愿投入占有效筹码的比例，投入一半即达该手最高值',
+    attack: '有机会增加下注时主动下注或加注的频率',
+    stability: '面对较贵且明显不划算的跟注时及时止损'
+  };
+  let identity, lastRevision, leagueRequest = 0, busy = false;
 
   const content = children => children.flat(Infinity).filter(value => value != null);
   const display = (...children) => view.replaceChildren(...content(children));
@@ -175,7 +183,7 @@
   function dimensionList(values) {
     return el('div', { className: 'club-dimensions' }, Object.entries(dimensionNames).map(([key, name]) => {
       const item = values[key];
-      return el('div', {}, el('span', {}, name), el('strong', {}, item.score === null ? '样本不足' : item.score),
+      return el('div', {}, el('span', {}, name), el('strong', {}, item.score === null ? '样本不足' : item.score.toFixed(1)),
         el('small', {}, item.observed == null ? item.samples + ' 次适用机会' : `${item.observed}/${item.samples} 次符合条件`));
     }));
   }
@@ -196,10 +204,10 @@
       ctx.closePath();
     }
     ctx.strokeStyle = '#52685a';
-    for (const radius of [24, 48, 72, 96]) { polygon(Array(6).fill(radius)); ctx.stroke(); }
+    for (const radius of [19.2, 38.4, 57.6, 76.8, 96]) { polygon(Array(6).fill(radius)); ctx.stroke(); }
     const items = labels.map(([key]) => values[key].score);
     if (items.every(value => value !== null)) {
-      polygon(items.map(value => value * .96));
+      polygon(items.map(value => value * 19.2));
       ctx.fillStyle = '#e4c98d42'; ctx.fill();
       ctx.strokeStyle = '#e4c98d'; ctx.stroke();
     }
@@ -207,7 +215,7 @@
     labels.forEach(([, name], index) => {
       ctx.fillStyle = '#e6e9dc'; ctx.fillText(name, ...point(index, 115));
       if (items[index] === null) return;
-      ctx.fillStyle = '#e4c98d'; ctx.beginPath(); ctx.arc(...point(index, items[index] * .96), 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e4c98d'; ctx.beginPath(); ctx.arc(...point(index, items[index] * 19.2), 4, 0, Math.PI * 2); ctx.fill();
     });
     return canvas;
   }
@@ -216,10 +224,10 @@
     return panel(personName(player), muted(`${player.title || '牌风待定'} · ${player.hands} 手`), radar(player.values), dimensionList(player.values));
   }
 
-  function teamFlag(flag) {
+  function teamFlag(flag, eager = false) {
     const node = el('span', { className: 'team-flag', 'aria-hidden': 'true', 'data-flag': flag?.src ? 'image' : flag?.id || 'pine' });
     if (flag?.src) {
-      const picture = el('img', { alt: '', decoding: 'async' });
+      const picture = el('img', { alt: '', decoding: 'async', loading: eager ? 'eager' : 'lazy' });
       picture.onerror = () => { picture.remove(); node.dataset.flag = 'pine'; };
       picture.src = flag.src;
       node.append(picture);
@@ -227,8 +235,8 @@
     return node;
   }
 
-  function teamIdentity(team, flags) {
-    return el('span', { className: 'club-team-name' }, teamFlag(flags.get(team.flagId)), el('span', {}, team.name));
+  function teamIdentity(team, flags, eager = false) {
+    return el('span', { className: 'club-team-name' }, teamFlag(flags.get(team.flagId), eager), el('span', {}, team.name));
   }
 
   function flagPicker(flags) {
@@ -251,16 +259,16 @@
       el('div', { className: 'club-overview-profile' },
         el('span', { className: 'club-avatar', 'aria-hidden': 'true' }, RiverAvatars.get(identity.profile.avatar).emoji),
         el('div', {}, el('strong', {}, identity.profile.name), el('small', {}, player?.title || '称号待定')),
-        el('div', { className: 'club-overview-team' }, el('small', {}, '所属队伍'), team ? teamIdentity(team, flags) : el('span', {}, '未加入队伍'))),
+        el('div', { className: 'club-overview-team' }, el('small', {}, '所属队伍'), team ? teamIdentity(team, flags, true) : el('span', {}, '未加入队伍'))),
       el('div', { className: 'club-overview-grid' },
         el('div', { className: 'club-overview-chart' },
           el('div', { className: 'club-overview-chart-heading' }, el('h3', {}, '赛季六维'),
-            Object.values(values).some(item => item.score === null) ? el('small', {}, '— 样本不足') : null),
+            el('small', {}, Object.values(values).some(item => item.score === null) ? '1–5 分 · — 样本不足' : '1–5 分')),
           radar(values, true),
           el('dl', { className: 'club-overview-dimensions' }, Object.entries(dimensionNames).map(([key, name]) => {
             const score = values[key].score;
             return el('div', {}, el('dt', {}, name),
-              el('dd', { 'aria-label': score === null ? '样本不足' : null }, score ?? '—'));
+              el('dd', { 'aria-label': score === null ? '样本不足' : null }, score === null ? '—' : score.toFixed(1)));
           }))),
         el('div', { className: 'club-overview-results' },
           el('div', { className: 'club-metrics' },
@@ -317,10 +325,10 @@
         team.mvp.map(player => muted(`${player.name} · ${player.matches} 场 / ${player.hands} 手 · ${number(player.bb)} BB · ${number(player.bb100)} BB/100`))]))));
   }
 
-  function ratingHelp() {
+  function ratingHelp(version = 2) {
     return el('details', { className: 'club-details' }, el('summary', {}, '六维评分口径'),
-      list(Object.entries(dimensionNames).map(([key, name]) => name + ' · ' + dimensionNotes[key])),
-      muted('至少打过 10 手，且一维有 5 次适用机会后才显示正式分数。胜率和赔率为模型估算。'));
+      list(Object.entries(dimensionNames).map(([key, name]) => name + ' · ' + (version === 1 ? legacyDimensionNotes : dimensionNotes)[key])),
+      muted('每项 1–5 分，至少打过 10 手且该项有 5 次适用机会才显示。胜率为模型估算。'));
   }
 
   function matchRoom(league, match, canCancel) {
@@ -359,11 +367,13 @@
   }
 
   async function showLeague(force = false) {
-    const league = await request('/api/league?code=' + encodeURIComponent(leagueCode));
-    const signature = JSON.stringify(league);
-    if (!force && (signature === lastDetail || view.contains(document.activeElement) &&
+    const id = ++leagueRequest;
+    const params = new URLSearchParams({ code: leagueCode });
+    if (!force && lastRevision) params.set('since', lastRevision);
+    const league = await request('/api/league?' + params);
+    if (id !== leagueRequest || !league.code || !force && (busy || view.contains(document.activeElement) &&
         document.activeElement.matches('input, select, textarea'))) return;
-    lastDetail = signature;
+    lastRevision = league.revision;
     const me = identity.profile.uid;
     const owner = league.owner === me;
     const flags = new Map(league.flags.map(flag => [flag.id, flag]));
@@ -405,7 +415,8 @@
       el('div', { className: 'club-detail-columns' },
         el('div', {}, showTeamRank(league, flags), personal,
           league.players.length ? el('details', { className: 'club-details' }, el('summary', {}, '联赛六维与称号'),
-            ratingHelp(), grid(league.players.map(dimensionsCard))) : null),
+            ratingHelp(), muted('打过新版计分场后，六维使用新版样本；只有旧赛报的玩家按旧口径换算为 1–5 分。'),
+            grid(league.players.map(dimensionsCard))) : null),
         el('div', {}, history, owner && !active ? leagueManagement(league) : null)));
     [...view.querySelectorAll('details')].forEach((details, index) => { if (expanded[index]) details.open = true; });
   }
@@ -419,10 +430,10 @@
     const deck = { short: '短牌', standard: '标准牌', auto: '按人数自动选择牌制' };
     const blinds = { short: '随牌制', auto: '随牌制', ante: '全员底注', position: '下家 1 倍盲注', standard: '标准大小盲' };
     display(el('h1', {}, report.name || '牌局赛报'),
-      muted(`${date(report.endedAt)} · ${report.hands} 手 · ${deck[rules.deckMode]} · ${blinds[rules.blindMode]} · 大盲 ${rules.bigBlind} · ${rules.allowBuyIn ? '可贷款买入' : '淘汰制'}`),
+      muted(`${date(report.endedAt)} · ${report.hands} 手 · ${deck[rules.deckMode]} · ${blinds[rules.blindMode]} · 大盲 ${rules.bigBlind} · ${rules.allowBuyIn ? rules.buyInThreshold == null ? '可贷款买入' : `筹码低于 ${rules.buyInThreshold} 可买入` : '淘汰制'}`),
       report.voidReason ? muted('本场已作废 · ' + report.voidReason) : null,
       report.leagueCode && identity.leagues ? buttonLink('返回所属联赛', leagueUrl(report.leagueCode), true) : null,
-      panel('赛果', net), ratingHelp(), grid(report.players.map(dimensionsCard)));
+      panel('赛果', net), ratingHelp(report.ratingVersion), grid(report.players.map(dimensionsCard)));
   }
 
   async function showProfile() {
@@ -465,12 +476,17 @@
           showInvite();
           return;
         }
-        setInterval(() => {
-          if (!document.hidden && !busy) showLeague().catch(error => {
+        async function refresh() {
+          try {
+            if (!document.hidden && !busy) await showLeague();
+          } catch (error) {
             if (error.status === 401) location.reload();
             else if (error.status === 404) location.replace('/club.html');
-          });
-        }, 2000);
+          } finally {
+            setTimeout(refresh, 2000);
+          }
+        }
+        setTimeout(refresh, 2000);
       } else {
         await showList();
         if (params.get('cleanup') === 'pending') {

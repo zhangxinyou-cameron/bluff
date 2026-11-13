@@ -14,7 +14,7 @@
     for (const key of ['music', 'sfx']) if (typeof saved[key] === 'boolean') preferences[key] = saved[key];
     for (const key of ['musicVolume', 'sfxVolume']) if (Number.isFinite(saved[key])) preferences[key] = Math.max(0, Math.min(100, saved[key]));
   } catch (_) {}
-  let context, musicGain, sfxGain, musicSource, loading;
+  let context, musicGain, sfxGain, musicSource, musicLoading;
   let trackIndex = 0, musicNode = null, trackTimer = null, switchId = 0;
   let unlocked = false;
   const buffers = new Map();
@@ -50,8 +50,8 @@
     return request;
   }
   function startMusic() {
-    if (musicSource) return;
-    void switchTrack(trackIndex);
+    if (!preferences.music || musicSource || musicLoading || document.hidden) return;
+    musicLoading = switchTrack(trackIndex).finally(() => { musicLoading = null; });
   }
   async function switchTrack(index) {
     if (!context) return;
@@ -59,8 +59,9 @@
     clearTimeout(trackTimer);
     const target = (index+tracks.length)%tracks.length;
     try {
+      if (!buffers.has(tracks[target].file)) status('正在加载曲目…');
       await load(tracks[target].file);
-      if (id!==switchId) return;
+      if (id!==switchId || !preferences.music || document.hidden) return;
       const oldSource=musicSource, oldNode=musicNode;
       trackIndex=target;
       musicSource=context.createBufferSource();
@@ -82,7 +83,6 @@
       status(`慢拍爵士 · ${tracks[target].bpm} BPM · ${target+1}/${tracks.length}`);
       if (preferences.music) {
         trackTimer=setTimeout(()=>{void switchTrack(trackIndex+1);},(musicSource.buffer.duration-.8)*1000);
-        void load(tracks[(target+1)%tracks.length].file).catch(()=>{});
       }
     } catch (_) { status('曲目加载失败，点击下一首重试'); }
   }
@@ -118,17 +118,14 @@
         refresh();
       }
       if (context.state === 'suspended' && !document.hidden) await context.resume();
-      if (!loading) {
-        status('正在准备慢拍爵士…');
-        loading = Promise.allSettled([...names, tracks[trackIndex].file].map(load)).then(results => {
-          startMusic();
-          const failed = results.some(result => result.status === 'rejected');
-          if (failed) status('部分音频加载失败，点击声音按钮重试');
-          if (failed) loading = null;
-        });
-      }
-      await loading;
-    } catch (_) { loading = null; status('音频暂未开启，点击声音按钮重试'); }
+    } catch (_) { status('音频暂未开启，点击声音按钮重试'); }
+  }
+  function prepareAudio() {
+    void unlock().then(() => {
+      if (!context || !preferences.music || musicSource || musicLoading) return;
+      if (document.readyState === 'complete') startMusic();
+      else window.addEventListener('load', startMusic, { once: true });
+    });
   }
   function play(name) {
     if (!context || !preferences.sfx) return;
@@ -152,8 +149,8 @@
     return 'tap';
   }
   // Capture delegates include buttons created later by the game renderer.
-  document.addEventListener('pointerdown', () => { void unlock(); }, { capture: true });
-  document.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key)) void unlock(); }, { capture: true });
+  document.addEventListener('pointerdown', prepareAudio, { capture: true });
+  document.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key)) prepareAudio(); }, { capture: true });
   document.addEventListener('click', event => {
     const target = event.target.closest('button, [role="button"], summary');
     if (!target || target.disabled || target.id === 'sfxToggle') return;
@@ -162,7 +159,7 @@
   document.addEventListener('change', event => { if (event.target.matches('select, input[type="range"]')) play('tap'); }, { capture: true });
   for (const key of ['music', 'sfx']) byId(key + 'Toggle').addEventListener('click', () => {
     preferences[key] = !preferences[key];
-    refresh(); save(); void unlock();
+    refresh(); save(); prepareAudio();
     if (key === 'sfx' && preferences.sfx) play('tap');
     if (key === 'music') {
       clearTimeout(trackTimer);
@@ -199,7 +196,7 @@
   document.addEventListener('visibilitychange', () => {
     if (!context || !unlocked) return;
     if (document.hidden) { clearTimeout(trackTimer); context.suspend().catch(() => {}); }
-    else { void unlock(); if (preferences.music && musicSource) trackTimer=setTimeout(()=>{void switchTrack(trackIndex+1);},musicSource.buffer.duration*1000); }
+    else { prepareAudio(); if (preferences.music && musicSource) trackTimer=setTimeout(()=>{void switchTrack(trackIndex+1);},musicSource.buffer.duration*1000); }
   });
   refresh();
 })();

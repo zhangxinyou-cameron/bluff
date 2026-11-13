@@ -24,18 +24,35 @@ test('zero, unlimited, exact boundaries, duplicate requests and malformed settin
   for(const value of [-1,.1,Infinity,NaN,'100','无限',{},Number.MAX_SAFE_INTEGER+1])assert.equal(E.validLoanLimit(value),false);
 });
 test('AI rebuys obey both caps, borrow partial allowance, and cannot bypass a zero limit',()=>{
-  for(const cap of [0,300]){
-    const g=game(cap,200);g.players[1].isAI=true;g.players[0].chips+=g.players[1].chips;g.players[1].chips=0;
-    assert.equal(E.startHand(g),cap>0);assert.equal(g.players[1].bankDebt,cap?200:0);
+  for(const [cap,threshold,expected] of [[0,null,0],[300,null,200],[300,0,0],[300,1,200]]){
+    const g=game(cap,200);g.buyInThreshold=threshold;g.players[1].isAI=true;g.players[0].chips+=g.players[1].chips;g.players[1].chips=0;
+    assert.equal(E.startHand(g),expected>0);assert.equal(g.players[1].bankDebt,expected);
     assert.equal(g.players.reduce((s,p)=>s+p.chips-p.bankDebt,0)+g.pot,g.initialTotal);
   }
 });
+test('buy-in threshold uses current chips before each loan and repayment remains open',()=>{
+  const g=game(600,500);
+  g.buyInThreshold=2001;
+  assert.ok(bank(g,'borrow',1).ok);
+  assert.equal(E.loanAllowance(g,g.players[0]),0);
+  assert.match(bank(g,'borrow',1).message,/低于 2001/);
+  assert.ok(bank(g,'repay',1).ok);
+  assert.ok(bank(g,'borrow',500).ok);
+  assert.match(bank(g,'borrow',1).message,/低于 2001/);
+  assert.ok(bank(g,'repay',500).ok);
+  g.buyInThreshold=0;
+  assert.equal(bank(g,'borrow',1).ok,false);
+  g.buyInThreshold=null;
+  assert.equal(E.loanAllowance(g,g.players[0]),99);
+});
 test('room settings validate limits, require host and propagate authoritative caps to the game',t=>{
   const m=new RoomManager(new Map());t.after(()=>m.dispose());const ws={readyState:1,send(){},close(){}};
-  m.join(ws,{roomCode:'456789',seatId:0,name:'Host'});const r=m.games.get('456789'),host=r.people.get(0),base={...r.settings,allowBuyIn:true,loanPerHandLimit:123,loanTotalLimit:456};
+  m.join(ws,{roomCode:'456789',seatId:0,name:'Host'});const r=m.games.get('456789'),host=r.people.get(0),base={...r.settings,allowBuyIn:true,loanPerHandLimit:123,loanTotalLimit:456,buyInThreshold:500};
   assert.equal(m.command(r,{id:1},{type:'roomSettings',settings:base}).ok,false);
   for(const value of [-1,.5,'100'])assert.equal(m.command(r,host,{type:'roomSettings',settings:{...base,loanTotalLimit:value}}).ok,false);
+  for(const value of [-1,.5,'100'])assert.equal(m.command(r,host,{type:'roomSettings',settings:{...base,buyInThreshold:value}}).ok,false);
   assert.ok(m.command(r,host,{type:'roomSettings',settings:base,maxPlayers:2,aiSlots:{1:true}}).ok);
   assert.ok(m.command(r,host,{type:'startGame'}).ok);assert.equal(r.game.loanPerHandLimit,123);assert.equal(m.serialize(r,0).loanTotalLimit,456);
+  assert.equal(m.serialize(r,0).buyInThreshold,500);
   assert.equal(m.command(r,host,{type:'roomSettings',settings:{...base,loanTotalLimit:null}}).ok,false);
 });
