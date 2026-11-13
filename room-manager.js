@@ -305,7 +305,7 @@ class RoomManager {
   }
   act(room,seatId,action,amount,expected,automatic=false){
     const g=room.game,p=g.players.find(p=>p.id===seatId);const before=p&&{chips:p.chips,bet:p.currentBet,currentBet:g.currentBet,minRaise:g.minRaise,betLevel:g.betLevel||0,phase:g.phase,cards:g.communityCards.length};
-    const decision=this.stats?.beforeAction(room,p,action,amount,automatic,expected);
+    const decision=this.stats?.beforeAction(room,p,automatic,expected);
     const result=E.applyAction(g,seatId,action,amount,expected);if(!result.ok)return result;
     const paid=action==='call'?Math.min(before.chips,Math.max(0,before.currentBet-before.bet)):action==='allin'?before.chips:action==='raise'?amount-before.bet:0;
     const level=before.bet+paid-before.currentBet>=before.minRaise&&['raise','allin'].includes(action)?before.betLevel+1:0;
@@ -315,8 +315,8 @@ class RoomManager {
     if(action==='call') displayAmount=paid;
     const amountLabel=displayAmount===null?'':`${action==='call'?' ':' 至 '}${displayAmount}`;
     const label=`${level?`${level}-BET · `:''}${ACTION[action]}${amountLabel}`;
-    const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),displayAmount,betLevel:level,raised:before.bet+paid>before.currentBet,label,street:before.phase,automatic});
-    this.stats?.action(room,seatId,decision,action,paid,event.raised);
+    const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),displayAmount,betLevel:level,raised:before.bet+paid>before.currentBet,facedBet:before.currentBet>before.bet,label,street:before.phase,automatic});
+    this.stats?.action(room,seatId,decision,event);
     // The closing action belongs in history, never in the new street's markers.
     if(g.phase===before.phase)p.lastAction={id:event.id,action,label,displayAmount,hand:g.handNumber,phase:before.phase,automatic};
     else for(const player of g.players)player.lastAction=null;

@@ -289,7 +289,7 @@ async function main() {
     assert.equal(await finish(memberHost), second.id);
     const result = await api(host, '/api/reports?id=' + second.id);
     assert.equal(result.rules.bigBlind, 50);
-    assert.equal(result.ratingVersion, 2);
+    assert.equal(result.ratingVersion, 3);
     const archivedId = '4f178643-48ba-4c79-aad0-48347dc61e6f';
     const saved = services.stats.matches.get(second.id);
     services.stats.save({ ...saved, id: archivedId, leagueCode: null, ratingVersion: undefined,
@@ -302,7 +302,7 @@ async function main() {
     services.stats.deleteMatches([archivedId]);
     assert.equal(result.players.find(player => player.uid === uids[0]).debt, 500);
     assert.equal(result.players.reduce((sum, player) => sum + player.profit, 0), 0);
-    assert.ok(result.players.filter(player=>player.uid!==uids[3]).every(player => player.values.luck.samples === 1 && player.values.luck.score === null));
+    assert.ok(result.players.every(player => player.values.luck.samples === player.hands && player.values.luck.score === null));
     assert.equal(result.players.find(player=>player.uid===uids[3]).hands,1);
     assert.equal(result.players.find(player=>player.uid===uids[3]).teamId,null);
     await host.getByRole('link', { name: '查看六维赛报' }).click();

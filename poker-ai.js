@@ -34,7 +34,7 @@ function startingStrength(hole,variant){
 }
 function observe(g,seatId,history=[]){
   const me=g.players.find(p=>p.id===seatId);if(!me||!E.betting(g)||g.players[g.currentPlayerIndex]?.id!==seatId)throw new Error('AI is not the acting player');
-  const actions=[];for(let i=history.length-1;i>=0&&actions.length<180;i--){const e=history[i];if(e.kind==='action')actions.push({seatId:e.seatId,hand:e.hand,street:e.street,action:e.action,amount:e.amount,raised:e.raised});}actions.reverse();
+  const actions=[];for(let i=history.length-1;i>=0&&actions.length<180;i--){const e=history[i];if(e.kind==='action')actions.push({seatId:e.seatId,hand:e.hand,street:e.street,action:e.action,amount:e.amount,raised:e.raised,facedBet:e.facedBet,automatic:e.automatic});}actions.reverse();
   // Explicit allowlist: never copy the game, its deck, private reveals, hand
   // results or any opponent holeCards into the strategy's input.
   const players=g.players.map(p=>({id:p.id,chips:p.chips,currentBet:p.currentBet,totalBet:p.totalBet,folded:!!p.folded,allIn:!!p.allIn,isActive:!!p.isActive,disconnected:!!p.disconnected,acted:!!p.acted}));
@@ -73,8 +73,8 @@ function makeRangeWeight(opponent,view){
     return aggressive?.22+.78*strength:.45+.55*strength;
   };
 }
-function estimateEquity(view,{samples=240,random=Math.random,exactRiver=true}={}){
-  const ctx=context(view),opponents=equityOpponents(view,ctx),known=new Set([...view.hole,...view.board].map(c=>c.suit*13+c.rank));
+function estimateEquity(view,{samples=240,random=Math.random,exactRiver=true,allOpponents=false}={}){
+  const ctx=context(view),opponents=allOpponents?ctx.opponents:equityOpponents(view,ctx),known=new Set([...view.hole,...view.board].map(c=>c.suit*13+c.rank));
   const available=E.createDeck(view.variant).filter(c=>!known.has(c.suit*13+c.rank)),myKnown=[...view.hole,...view.board];
   const weights=opponents.map(p=>makeRangeWeight(p,view));
   if(!opponents.length)return{equity:1,trials:0,modeledOpponents:0,exact:true};

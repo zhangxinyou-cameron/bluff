@@ -1,13 +1,13 @@
 const { randomUUID } = require('node:crypto');
 const E = require('./public/poker-engine');
-const AI = require('./poker-ai');
+const { clamp, dealtLuck, decisionSnapshot, evaluateDecision } = require('./rating-model');
 const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
 const dimensions = ['luck', 'strategy', 'calculation', 'courage', 'attack', 'stability'];
-const RATING_VERSION = 2;
+const RATING_VERSION = 3;
 const empty = () => Object.fromEntries(dimensions.map(key => [key, { total: 0, samples: 0 }]));
-const clamp = value => Math.max(0, Math.min(1, value));
+const mean = metric => metric.samples ? metric.total / metric.samples : 0;
 
 function add(metrics, key, value) {
   metrics[key].samples++;
@@ -18,56 +18,29 @@ function scores(metrics, hands, version = RATING_VERSION) {
   return Object.fromEntries(dimensions.map(key => {
     const { total, samples } = metrics[key];
     if (hands < 10 || samples < 5) return [key, { score: null, samples }];
-    const continuous = key === 'luck' || (key === 'courage' && version >= RATING_VERSION);
-    const score = Math.round(10 + 40 * clamp(total / samples)) / 10;
+    const continuous = version >= 3 || key === 'luck' || (key === 'courage' && version >= 2);
+    const rarity = key === 'luck' ? Math.min(0.25, 0.17 * (metrics[key].rarity || 0) * Math.sqrt(20 / Math.max(20, samples))) : 0;
+    const average = version >= 3 ? (total + 3) / (samples + 6) + rarity : mean(metrics[key]);
+    const score = Math.round(10 + 40 * clamp(average)) / 10;
     return [key, { score, samples, observed: continuous ? null : total }];
   }));
 }
 
-function title(values) {
+function title(values, version = RATING_VERSION) {
   const { luck, strategy, calculation, courage, attack, stability } = values;
   const candidates = [
-    ['好运连连', luck.score, 3.8],
-    ['偷鸡摸狗', strategy.score, 3.8],
-    ['胆大心细', Math.min(courage.score ?? 0, calculation.score ?? 0), 3.5],
-    ['稳健派', stability.score, 3.8],
-    ['主动进攻', attack.score, 3.8]
+    ['好运连连', luck.score, 3.8, luck.samples],
+    ['偷鸡摸狗', strategy.score, 3.8, strategy.samples],
+    ['胆大心细', Math.min(courage.score ?? 0, calculation.score ?? 0), 3.5, Math.min(courage.samples, calculation.samples)],
+    ['稳健派', stability.score, 3.8, stability.samples],
+    ['主动进攻', attack.score, 3.8, attack.samples],
+    ['精算牌手', calculation.score, 3.8, calculation.samples]
   ];
-  return candidates.filter(([, score, minimum]) => score >= minimum).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-}
-
-function seededRandom(seed) {
-  let state = seed | 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) | 0;
-    return (state >>> 0) / 4294967296;
-  };
-}
-
-function expectedPots(game, board) {
-  const used = new Set([...game.players.flatMap(p => p.holeCards), ...board].map(c => c.suit * 16 + c.rank));
-  const available = E.createDeck(game.variant).filter(c => !used.has(c.suit * 16 + c.rank));
-  const live = game.players.filter(p => p.isActive && !p.folded);
-  const expected = new Map(live.map(p => [p.id, 0]));
-  const random = seededRandom(game.handNumber + board.length * 901);
-  const trials = board.length === 4 ? available.length : 96;
-  for (let trial = 0; trial < trials; trial++) {
-    const pool = available.slice(), full = board.slice();
-    while (full.length < 5) {
-      const index = board.length === 4 ? trial : Math.floor(random() * pool.length);
-      full.push(pool[index]);
-      pool[index] = pool.at(-1);
-      pool.pop();
-    }
-    const ranks = new Map(live.map(p => [p.id, AI.score([...p.holeCards, ...full], game.variant)]));
-    for (const [index, pot] of game.pots.entries()) {
-      const eligible = game.potEligibility[index];
-      const best = Math.max(...eligible.map(id => ranks.get(id)));
-      const winners = eligible.filter(id => ranks.get(id) === best);
-      for (const id of winners) expected.set(id, expected.get(id) + pot.amount / winners.length / trials);
-    }
-  }
-  return expected;
+  if (version < 3) return candidates.slice(0, 5).filter(([, score, minimum]) => score >= minimum).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  const ranked = candidates.filter(([name, score, minimum, samples]) => samples >= 12 && score >= minimum &&
+    (name !== '稳健派' || (score >= 4 && calculation.score >= 3.5)))
+    .sort((a, b) => (b[1] - b[2]) - (a[1] - a[2]));
+  return ranked[0]?.[0] ?? null;
 }
 
 class MatchStats {
@@ -97,7 +70,7 @@ class MatchStats {
     const match = room.leagueMatch;
     room.statistics = {
       id: match?.id || randomUUID(), startedAt: Date.now(), hands: 0, rules: { ...room.settings },
-      players: new Map()
+      players: new Map(), lastLoss: new Map()
     };
     if (match) this.save({ ...match, status: 'running', startedAt: room.statistics.startedAt,
       participantUids: humans.map(person => person.uid), rules: room.statistics.rules });
@@ -114,75 +87,89 @@ class MatchStats {
         teamId: teamForUid(person.uid) ?? null, hands: 0, knockouts: 0, metrics: empty() });
     }
     room.statistics.hand = {
-      number: g.handNumber, participating, courage: new Map(), lastPressure: null, lockBoard: null
+      number: g.handNumber, participating, observations: new Map(), pressure: null
     };
   }
 
-  beforeAction(room, player, action, amount, automatic, expected) {
+  beforeAction(room, player, automatic, expected) {
     const g = room.game;
     if (automatic || !player || !room.statistics?.players.has(player.id) || !E.betting(g) ||
         g.players[g.currentPlayerIndex] !== player) return null;
     if (expected && (expected.handNumber !== g.handNumber || expected.revision !== g.revision)) return null;
-    const need = Math.min(player.chips, Math.max(0, g.currentBet - player.currentBet));
-    const opponents = g.players.filter(other => other !== player && other.isActive && !other.folded);
-    const canRaise = player.chips > need && E.canRaise(g, player);
-    const cap = player.totalBet + need;
-    const contestable = g.players.reduce((sum, other) => sum + Math.min(other.totalBet, cap), 0) + need;
-    const effective = Math.min(player.chips, Math.max(0, ...opponents.map(other => other.chips + other.currentBet - player.currentBet)));
-    const sizing = action === 'allin' ? player.chips : action === 'raise' ? amount - player.currentBet : 0;
-    const bluff = g.communityCards.length >= 3 && canRaise && opponents.length <= 2 &&
-      opponents.every(other => !other.allIn) && Math.min(sizing, effective) - need >= Math.max(g.bigBlind, contestable / 4);
-    const priced = g.communityCards.length >= 3 && need > 0 &&
-      (['call', 'fold'].includes(action) || action === 'allin' && sizing === need);
-    return { canRaise, effective, need, potOdds: need / Math.max(1, contestable), priceMatters: need >= Math.max(g.bigBlind, player.chips / 10),
-      bluff, priced, view: bluff || priced ? AI.observe(g, player.id, room.history) : null, seed: g.revision + 91 };
+    return decisionSnapshot(g, player, room.history);
   }
 
-  action(room, seat, decision, action, paid, raised) {
+  action(room, seat, decision, event) {
     const stats = room.statistics, hand = stats?.hand;
     if (!hand) return;
-    if (raised) hand.lastPressure = null;
+    const { action, amount: paid, raised, street } = event;
+    if (hand.pressure?.street === street && hand.pressure.seat !== seat && action === 'fold' && !event.automatic) {
+      hand.pressure.folds.add(seat);
+    }
+    if (raised) hand.pressure = null;
     if (!decision) return;
-    const { metrics } = stats.players.get(seat);
-    if (decision.effective > 0) {
-      const risk = clamp(Math.min(paid, decision.effective) / decision.effective * 2);
-      hand.courage.set(seat, Math.max(hand.courage.get(seat) ?? 0, risk));
+    const result = evaluateDecision(decision, action, paid, raised);
+    if (!result) return;
+    if (!hand.observations.has(seat)) hand.observations.set(seat, empty());
+    const metrics = hand.observations.get(seat);
+    const { equity, fair, effective, need, scale, callEV, best, chosen, regret, actualEV, valueTarget } = result;
+    const accuracy = Math.exp(-regret / (scale * 0.26));
+    const exposure = clamp(Math.min(paid, effective) / Math.max(1, effective));
+    const lowEquity = equity < fair * 0.90;
+    const meaningful = need >= decision.view.bigBlind / 2 || raised || best.ev > callEV + scale * 0.10;
+    if (meaningful) add(metrics, 'calculation', 0.18 + accuracy * 0.68);
+    if (lowEquity && meaningful) {
+      add(metrics, 'courage', clamp(exposure * 3.2) * clamp(1.25 - equity / fair * 0.55) * (raised ? 1 : 0.65));
     }
-    if (decision.canRaise) add(metrics, 'attack', Number(raised));
-    if (!decision.view) return;
-    const { equity } = AI.estimateEquity(decision.view, { samples: 96, exactRiver: false, random: seededRandom(decision.seed) });
-    if (raised && decision.bluff && equity < 0.65 / decision.view.players.filter(player => player.isActive && !player.folded).length) {
-      add(metrics, 'strategy', 0);
-      hand.lastPressure = seat;
+    if (meaningful) {
+      const overplay = Math.max(0, -actualEV) / scale;
+      const chasing = stats.lastLoss.get(seat) && exposure >= 0.25 && actualEV < -scale * 0.06;
+      const costlyFold = action === 'fold' && best.ev > scale * 0.18;
+      const weight = 1 + (exposure >= 0.25 ? 1 : 0);
+      const stability = clamp(0.84 - 0.52 * (1 - accuracy) - 0.82 * overplay - (chasing ? 0.16 : 0) - (costlyFold ? 0.20 : 0));
+      for (let i = 0; i < weight; i++) add(metrics, 'stability', stability);
     }
-    const edge = equity - decision.potOdds;
-    if (decision.priced && Math.abs(edge) >= 0.10) {
-      add(metrics, 'calculation', Number((edge > 0) === (action !== 'fold')));
-      if (decision.priceMatters && edge < 0) add(metrics, 'stability', Number(action === 'fold'));
+    if (equity > Math.max(fair + 0.12, fair * 1.35) && valueTarget >= decision.view.bigBlind * 0.5) {
+      const extra = chosen?.extra ?? 0;
+      const captured = clamp(extra / valueTarget);
+      add(metrics, 'attack', 0.14 + 0.76 * captured * accuracy);
     }
-  }
-
-  lock(room) {
-    if (room.statistics?.hand) room.statistics.hand.lockBoard = room.game.communityCards.slice();
+    if (!lowEquity || street === 'pre_flop') return;
+    if (chosen && chosen.foldChance > 0.05 && paid - need >= decision.view.bigBlind / 2) {
+      const score = 0.18 + 0.42 * accuracy;
+      add(metrics, 'strategy', score);
+      hand.pressure = { seat, street, folds: new Set(), opponents: result.opponents.map(player => player.id),
+        canProfit: chosen.ev >= -scale * 0.12, bonus: 0.38 * accuracy * (1 - chosen.foldChance) };
+    } else if (result.bluffOpportunity) {
+      add(metrics, 'strategy', 0.25 + 0.25 * accuracy);
+    } else if (result.canPressure) {
+      add(metrics, 'strategy', 0.5);
+    }
   }
 
   settleHand(room) {
     const stats = room.statistics, g = room.game, hand = stats?.hand;
     if (!hand || hand.number !== g.handNumber || stats.lastHand === hand.number) return;
-    const expected = hand.lockBoard && hand.lockBoard.length < 5 && g.showdownOccurred && g.pots.length
-      ? expectedPots(g, hand.lockBoard) : null;
+    const luck = dealtLuck(g);
+    const pressure = hand.pressure;
+    if (pressure?.canProfit && !g.showdownOccurred && g.winners.includes(pressure.seat) &&
+        pressure.opponents.every(id => pressure.folds.has(id))) {
+      hand.observations.get(pressure.seat).strategy.total += pressure.bonus;
+    }
     for (const [seat, row] of stats.players) {
       if (!hand.participating.has(seat)) continue;
       const player = g.players.find(p => p.id === seat);
       row.hands++;
-      if (hand.courage.has(seat)) add(row.metrics, 'courage', hand.courage.get(seat));
-      if (!g.showdownOccurred && hand.lastPressure === seat && g.winners.includes(seat)) row.metrics.strategy.total++;
-      if (expected?.has(seat)) {
-        const contested = g.pots.reduce((sum, pot, index) => sum + (g.potEligibility[index].includes(seat) && g.potEligibility[index].length > 1 ? pot.amount : 0), 0);
-        const actual = g.pots.reduce((sum, pot, index) => sum + (g.potEligibility[index].length > 1 ?
-          (pot.awards.find(a => a.seatId === seat)?.amount || 0) : 0), 0);
-        if (contested) add(row.metrics, 'luck', clamp(0.5 + (actual - expected.get(seat)) / (2 * contested)));
+      for (const [key, { total, samples }] of Object.entries(hand.observations.get(seat) || {})) {
+        if (samples) add(row.metrics, key, total / samples);
       }
+      const cards = luck.get(seat);
+      if (cards) {
+        add(row.metrics, 'luck', cards.value);
+        if (cards.rare) row.metrics.luck.rarity = (row.metrics.luck.rarity || 0) + cards.rare;
+      }
+      const starting = player.chipsBeforeHand;
+      stats.lastLoss.set(seat, starting - player.chips >= Math.max(3 * g.bigBlind, starting * 0.15));
       if (!g.allowBuyIn && player.eliminatedHand === hand.number) {
         const potIndex = g.potEligibility.findLastIndex(seats => seats.includes(seat));
         const winners = g.pots[potIndex]?.winners;

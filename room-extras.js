@@ -127,7 +127,6 @@ module.exports=function install(RoomManager){
     },
     prepareVote(room){
       const vote=room.game.runoutVote;if(!vote||vote.expiresAt)return;
-      this.stats?.lock(room);
       vote.expiresAt=Date.now()+(this.timing.vote??20000);
       vote.yesIds=vote.eligibleIds.filter(id=>room.game.players.find(p=>p.id===id)?.isAI);
       this.event(room,'system','下注已结束，等待所有争池玩家协商：发两次需全员同意，拒绝或超时则发一次');

@@ -10,13 +10,21 @@
     luck: '下注锁定后的实际分池与预期分池', strategy: '翻后弱牌主动施压并拿下底池', calculation: '在赔率明确时作出符合估算的跟注或弃牌',
     courage: '一次主动投入至少行动前筹码的四分之一', attack: '有加注权时主动下注或加注', stability: '整手主动投入不超过开手筹码的三分之一'
   };
-  const dimensionNotes = {
+  const previousDimensionNotes = {
     luck: '下注锁定后，实际拿到的争议底池份额高于或低于期望',
     strategy: '翻后用弱牌向一至两位可弃牌的对手施压，成功让对手弃牌',
     calculation: '赔率差距明显时，跟注有利的牌或弃掉不划算的牌',
     courage: '每手最大一次自愿投入占有效筹码的比例，投入一半即达该手最高值',
     attack: '有机会增加下注时主动下注或加注的频率',
     stability: '面对较贵且明显不划算的跟注时及时止损'
+  };
+  const dimensionNotes = {
+    luck: '比较起手牌胜率和最终牌型。弃牌后也计算实际发出的公共牌，亲自组成稀有牌型另有加分',
+    strategy: '弱牌施压的筹码期望，以及是否迫使仍在争池的对手主动弃牌',
+    calculation: '实际选择的筹码期望离模型估计的最佳弃牌、跟注或下注尺寸有多远',
+    courage: '胜率低于当前桌面平均胜率时，是否愿意投入有分量的有效筹码',
+    attack: '有优势时能否用合适的尺寸做大底池，争取对手投入更多筹码',
+    stability: '避免负期望重注，在不划算时止损；大输后继续做高风险、低期望决策会扣分'
   };
   let identity, lastRevision, leagueRequest = 0, busy = false;
 
@@ -184,7 +192,7 @@
     return el('div', { className: 'club-dimensions' }, Object.entries(dimensionNames).map(([key, name]) => {
       const item = values[key];
       return el('div', {}, el('span', {}, name), el('strong', {}, item.score === null ? '样本不足' : item.score.toFixed(1)),
-        el('small', {}, item.observed == null ? item.samples + ' 次适用机会' : `${item.observed}/${item.samples} 次符合条件`));
+        el('small', {}, item.observed == null ? item.samples + ' 个样本' : `${item.observed}/${item.samples} 次符合条件`));
     }));
   }
 
@@ -221,7 +229,8 @@
   }
 
   function dimensionsCard(player) {
-    return panel(personName(player), muted(`${player.title || '牌风待定'} · ${player.hands} 手`), radar(player.values), dimensionList(player.values));
+    return panel(personName(player), muted(`${player.title || '牌风待定'} · ${player.hands} 手${player.ratingVersion < 3 ? ' · 历史评分' : ''}`),
+      radar(player.values), dimensionList(player.values));
   }
 
   function teamFlag(flag, eager = false) {
@@ -325,10 +334,12 @@
         team.mvp.map(player => muted(`${player.name} · ${player.matches} 场 / ${player.hands} 手 · ${number(player.bb)} BB · ${number(player.bb100)} BB/100`))]))));
   }
 
-  function ratingHelp(version = 2) {
+  function ratingHelp(version = 3) {
+    const notes = version === 1 ? legacyDimensionNotes : version === 2 ? previousDimensionNotes : dimensionNotes;
     return el('details', { className: 'club-details' }, el('summary', {}, '六维评分口径'),
-      list(Object.entries(dimensionNames).map(([key, name]) => name + ' · ' + (version === 1 ? legacyDimensionNotes : dimensionNotes)[key])),
-      muted('每项 1–5 分，至少打过 10 手且该项有 5 次适用机会才显示。胜率为模型估算。'));
+      list(Object.entries(dimensionNames).map(([key, name]) => name + ' · ' + notes[key])),
+      muted(version >= 3 ? '每项 1–5 分，至少打过 10 手且该项有 5 手样本才显示。少量样本的分数更接近 3 分，称号至少需要 12 手该项样本。胜率和筹码期望为模型估算。' :
+        '每项 1–5 分，至少打过 10 手且该项有 5 次适用机会才显示。胜率为模型估算。'));
   }
 
   function matchRoom(league, match, canCancel) {

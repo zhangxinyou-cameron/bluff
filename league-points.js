@@ -1,4 +1,4 @@
-const { empty, scores, title, RATING_VERSION } = require('./match-stats');
+const { empty, scores, title } = require('./match-stats');
 
 const close = value => Math.abs(value) < 1e-9 ? 0 : value;
 const compareRecord = (a, b) => close(b.average - a.average) || close(b.bb100 - a.bb100);
@@ -47,6 +47,7 @@ function aggregate(league, matches, netPoints = false) {
         rating.metrics[key].total += player.metrics[key].total;
         rating.metrics[key].samples += player.metrics[key].samples;
       }
+      rating.metrics.luck.rarity = (rating.metrics.luck.rarity || 0) + (player.metrics.luck.rarity || 0);
       const team = teamRows.get(player.teamId);
       if (!team) continue;
       if (!teams.has(team.id)) teams.set(team.id, { id: team.id, bb: 0, profit: 0 });
@@ -87,10 +88,10 @@ function aggregate(league, matches, netPoints = false) {
   }
   const players = [...playerRows.values()].map(row => {
     const { ratings, ...rest } = row;
-    const ratingVersion = ratings.has(RATING_VERSION) ? RATING_VERSION : 1;
+    const ratingVersion = Math.max(...ratings.keys());
     const rating = ratings.get(ratingVersion);
     const values = scores(rating.metrics, rating.hands, ratingVersion);
-    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(values) };
+    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(values, ratingVersion) };
   });
   const teams = [...teamRows.values()].map(({ contributions, ...row }) => {
     const eligible = [...contributions.values()].filter(player => player.matches >= league.minMatches).sort((a, b) => b.bb - a.bb);

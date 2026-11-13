@@ -1,7 +1,7 @@
 const { error, profile } = require('./accounts');
 const { readFile } = require('node:fs/promises');
 const { loginDestination } = require('./access');
-const { scores, RATING_VERSION } = require('./match-stats');
+const { scores } = require('./match-stats');
 
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -88,7 +88,7 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
       const { players, ...summary } = report;
       const ratingVersion = report.ratingVersion ?? 1;
       json(res, { ...summary, ratingVersion, players: players.map(({ metrics, ...row }) => {
-        if (ratingVersion >= RATING_VERSION) return row;
+        if (ratingVersion >= 2) return row;
         return { ...row, values: scores(metrics, row.hands, ratingVersion) };
       }) });
     } else {
