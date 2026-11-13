@@ -229,7 +229,7 @@
   }
 
   function dimensionsCard(player) {
-    return panel(personName(player), muted(`${player.title || '牌风待定'} · ${player.hands} 手${player.ratingVersion < 4 ? ' · 历史评分' : ''}`),
+    return panel(personName(player), muted(`${player.title || '称号待定'} · ${player.hands} 手${player.ratingVersion < 4 ? ' · 历史评分' : ''}`),
       radar(player.values), dimensionList(player.values));
   }
 
@@ -338,7 +338,7 @@
     const notes = version === 1 ? legacyDimensionNotes : version === 2 ? previousDimensionNotes : dimensionNotes;
     return el('details', { className: 'club-details' }, el('summary', {}, '六维评分口径'),
       list(Object.entries(dimensionNames).map(([key, name]) => name + ' · ' + notes[key])),
-      muted(version >= 4 ? '每项按 1–5 档显示。累计至少打过 10 手，且该项有 5 手样本才出分。5 档和称号至少需要 12 手该项样本。胜率和筹码期望为模型估算。' :
+      muted(version >= 4 ? '每项按 1–5 档显示。累计至少打过 10 手，且该项有 5 手样本才出分。5 档至少需要 12 手该项样本。称号按已达到 12 手样本的维度组合判定，突出表现可先获得称号。胜率和筹码期望为模型估算。' :
         version === 3 ? '历史成绩以整数显示，保留当时的评分口径和称号。胜率和筹码期望为模型估算。' :
         '每项 1–5 分，至少打过 10 手且该项有 5 次适用机会才显示。胜率为模型估算。'));
   }

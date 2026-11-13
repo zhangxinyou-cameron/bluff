@@ -300,6 +300,23 @@ async function main() {
     assert.deepEqual(historical.players[0].values.stability, { score: 4, samples: 5, observed: 4 });
     assert.equal(historical.players[0].title, '稳健派');
     services.stats.deleteMatches([archivedId]);
+    const titleFixtureId = '11a355b1-81bc-4735-89bb-141480f63899';
+    const exemplar = saved.players.find(player => player.uid === uids[0]);
+    const tiers = { luck: 3, strategy: 3, calculation: 5, courage: 4, attack: 3, stability: 3 };
+    const values = Object.fromEntries(Object.entries(tiers).map(([key, score]) => [key, { score, samples: 24, observed: null }]));
+    services.stats.save({ ...saved, id: titleFixtureId, leagueCode: null, name: '组合称号赛报', hands: 24,
+      players: [{ ...exemplar, hands: 24, title: '精算牌手', values }] });
+    const titleReport = await api(host, '/api/reports?id=' + titleFixtureId);
+    assert.equal(titleReport.players[0].title, '算准敢押');
+    assert.deepEqual(titleReport.players[0].values, values);
+    const reportPage = await host.context().newPage();
+    try {
+      await reportPage.goto(base + '/club.html?report=' + titleFixtureId);
+      await reportPage.getByText('算准敢押 · 24 手', { exact: true }).waitFor();
+    } finally {
+      await reportPage.close();
+      services.stats.deleteMatches([titleFixtureId]);
+    }
     assert.equal(result.players.find(player => player.uid === uids[0]).debt, 500);
     assert.equal(result.players.reduce((sum, player) => sum + player.profit, 0), 0);
     assert.ok(result.players.every(player => player.values.luck.samples === player.hands && player.values.luck.score === null));

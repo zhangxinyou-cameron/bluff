@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { aggregate } = require('../league-points');
-const { MatchStats, empty, scores, title } = require('../match-stats');
+const { MatchStats, dimensions, empty, scores, title } = require('../match-stats');
 const { dealtLuck, evaluateDecision } = require('../rating-model');
 const E = require('../public/poker-engine');
 
@@ -85,6 +85,43 @@ test('each dimension can reach tier five with sustained performance, capped with
   assert.ok(Object.values(scores(metrics, 24)).every(value => Number.isInteger(value.score) && value.score >= 1));
 });
 
+test('all 15,625 complete rating profiles resolve to 49 reachable titles', () => {
+  const titles = new Set();
+  const profile = (tiers, samples = 24) => Object.fromEntries(dimensions.map((key, i) => [key, { score: tiers[i], samples }]));
+  for (let code = 0; code < 5 ** dimensions.length; code++) {
+    const tiers = dimensions.map((_, i) => Math.floor(code / 5 ** i) % 5 + 1);
+    const result = title(profile(tiers));
+    assert.ok(result, 'No title for ' + tiers.join(','));
+    titles.add(result);
+  }
+  assert.equal(titles.size, 49);
+  assert.equal(title(profile([3, 3, 3, 3, 3, 3])), '均衡牌手');
+  assert.equal(title(profile([1, 1, 1, 1, 1, 1])), '磨牌新秀');
+  assert.equal(title(profile([3, 5, 4, 3, 3, 3])), '以诈破局');
+  assert.equal(title(profile([3, 4, 5, 3, 3, 3])), '精算布局');
+  assert.equal(title(profile([3, 5, 5, 3, 3, 3])), '运筹帷幄');
+  assert.equal(title(profile([3, 3, 5, 5, 3, 3])), '胆大心细');
+  assert.equal(title(profile([3, 5, 5, 5, 5, 5])), '全能牌手');
+  assert.equal(title(profile([5, 5, 5, 5, 5, 5])), '天时地利');
+  assert.equal(title(profile([5, 4, 4, 4, 4, 4], 11)), null);
+  assert.equal(title(profile([null, null, null, null, null, 5])), '稳健派');
+  assert.equal(title(profile([null, 3, 3, 3, 3, 3])), null);
+});
+
+test('league titles use the same combinations as individual reports', () => {
+  const league = { minHands: 1, minMatches: 1, teams: [] };
+  const completed = match('sample', 20, [['a', null, 0, 0, 30]], { ratingVersion: 4, hands: 30 });
+  const metrics = completed.players[0].metrics;
+  for (const key of dimensions) metrics[key] = { total: 15, samples: 30 };
+  metrics.calculation.total = 28;
+  metrics.courage.total = 5;
+  metrics.attack.total = 7;
+  metrics.stability.total = 25;
+  const result = aggregate(league, [completed], true).players[0];
+  assert.equal(result.title, '冷静精算');
+  assert.equal(result.title, title(scores(metrics, 30)));
+});
+
 test('folded royal counts as dealt luck, while a shared board royal earns no rarity bonus', () => {
   const game = E.createGame([0, 1, 2].map(id => ({ id, chips: 1000 })), 20);
   Object.assign(game, { dealerIndex: 0, handNumber: 1, phase: 'river', communityCards: cards('Ts Js Qs 2h 3d') });
@@ -161,9 +198,9 @@ test('rare hands visibly lift the rating and five good folds cannot confer a ste
   assert.equal(title(baseline), null);
   delete metrics.luck.rarity;
   metrics.stability = { samples: 16, total: 14 };
-  assert.notEqual(title(scores(metrics, 16)), '稳健派');
+  assert.equal(title(scores(metrics, 16)), '知进知退');
   metrics.calculation = { samples: 16, total: 12.5 };
-  assert.equal(title(scores(metrics, 16)), '稳健派');
+  assert.equal(title(scores(metrics, 16)), '步步为营');
 });
 
 test('profitable weak-hand pressure gains strategy credit when the opponent voluntarily folds', () => {

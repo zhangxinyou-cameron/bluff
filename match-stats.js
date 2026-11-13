@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const E = require('./public/poker-engine');
 const { clamp, dealtLuck, decisionSnapshot, evaluateDecision } = require('./rating-model');
+const { combinationTitle } = require('./rating-titles');
 const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
@@ -37,17 +38,8 @@ function scores(metrics, hands, version = RATING_VERSION, historicalPrecision = 
 }
 
 function title(values, version = RATING_VERSION) {
+  if (version >= 4) return combinationTitle(values);
   const { luck, strategy, calculation, courage, attack, stability } = values;
-  if (version >= 4) {
-    const candidates = [
-      ['好运连连', { ...luck, score: luck.score === 5 ? 5 : null }], ['偷鸡摸狗', strategy], ['主动进攻', attack],
-      ['胆大心细', { score: Math.min(courage.score ?? 0, calculation.score ?? 0), samples: Math.min(courage.samples, calculation.samples) }],
-      ['敢打敢拼', courage], ['稳健派', { ...stability, score: calculation.score >= 4 ? stability.score : null }],
-      ['精算牌手', { ...calculation, score: calculation.score === 5 ? 5 : null }]
-    ];
-    return candidates.filter(([, value]) => value.samples >= 12 && value.score >= 4)
-      .sort(([, a], [, b]) => b.score - a.score)[0]?.[0] ?? null;
-  }
   const candidates = [
     ['好运连连', luck.score, 3.8, luck.samples],
     ['偷鸡摸狗', strategy.score, 3.8, strategy.samples],
