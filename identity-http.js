@@ -1,7 +1,7 @@
 const { error, profile } = require('./accounts');
 const { readFile } = require('node:fs/promises');
 const { loginDestination } = require('./access');
-const { scores, title } = require('./match-stats');
+const { scores, title, operationEstimates } = require('./match-stats');
 const { FIRST_OPERATION_VERSION, operationRating, rankOperations } = require('./operation-rating');
 
 function json(res, data, status = 200) {
@@ -89,7 +89,7 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
       const { players, ...summary } = report;
       const ratingVersion = report.ratingVersion ?? 1;
       const operations = ratingVersion >= FIRST_OPERATION_VERSION ? new Map(rankOperations(players.map(row => ({
-        uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values)
+        uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values, operationEstimates(row.metrics, row.values))
       }))).map(row => [row.uid, row])) : new Map();
       json(res, { ...summary, ratingVersion, players: players.map(({ metrics, ...row }) => {
         if (ratingVersion >= FIRST_OPERATION_VERSION) {

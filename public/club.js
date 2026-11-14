@@ -189,14 +189,14 @@
   }
 
   function operationValue(rating) {
-    return rating ? el('span', { className: 'club-operation-value' }, el('strong', {}, `${rating.score} 分`),
-      rating.bonus ? badge(`逆风 +${rating.bonus}`, true) : null) : '—';
+    return rating ? el('span', { className: 'club-operation-value' }, el('strong', {}, `${rating.score.toFixed(1)} 分`),
+      rating.bonus ? badge(`逆风 +${rating.bonus.toFixed(1)}`, true) : null) : '—';
   }
 
   function operationBoard(players, league) {
     const season = Boolean(league);
     return panel(season ? '操作评分榜' : '本场操作评分',
-      muted(season ? `按本届新版样本合并后评分。至少出赛 ${league.minMatches} 场新版计分场才可排名。` : '百分制，评价本场决策。'),
+      muted(season ? `按本届有效样本合并后评分。至少出赛 ${league.minMatches} 场适用的计分场才可排名。` : '满分 10.0，评价本场决策。'),
       players.some(player => player.operationRating) ? standings(
         ['排名', '玩家', '操作评分', season ? '计分场次' : '有效维度'], players.map(player => [
           player.operationPlace ?? (player.operationRating ? '待达标' : player.operationMatches === 0 ? '历史口径' : '样本不足'),
@@ -204,8 +204,8 @@
             player.operationRating ? `${player.operationRating.dimensions}/5` : '—'
         ])) : muted('还没有足够的新版操作样本。'),
       el('details', { className: 'club-details' }, el('summary', {}, '操作评分怎么算？'),
-        muted('满分 100，算力 35%、稳健 30%、博弈 15%、进攻 15%、胆量 5%。至少三项出分，必须包括算力和稳健；缺少的项不计，按已有项权重折算。'),
-        muted('牌运 1–2 档、基础分至少 60，且稳健或博弈达到 4 档时，分别加 6 或 3 分，最高 100 分。净收益不参与评分，同分并列。')));
+        muted('按五项操作的原始样本加权后换算为 0.0–10.0。算力 35%、稳健 30%、博弈 15%、进攻 15%、胆量 5%。至少三项有样本达标，包括算力和稳健。'),
+        muted('基础分达到 8.8 且稳健或博弈达到 4 档时，牌运 1 档可加 0.6 分，2 档可加 0.3 分。10.0 封顶，同分并列。')));
   }
 
   function dimensionList(values) {

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { aggregate } = require('../league-points');
-const { MatchStats, dimensions, empty, scores, title } = require('../match-stats');
+const { MatchStats, dimensions, empty, scores, title, operationEstimates } = require('../match-stats');
 const { operationRating } = require('../operation-rating');
 const { dealtLuck, evaluateDecision } = require('../rating-model');
 const E = require('../public/poker-engine');
@@ -124,18 +124,33 @@ test('league titles use the same combinations as individual reports', () => {
 });
 
 test('low luck rewards good decisions within a cap instead of rewarding poor play or deducting for good luck', () => {
-  const values = (luck, strategy, calculation, courage, attack, stability) => Object.fromEntries(
-    [luck, strategy, calculation, courage, attack, stability].map((score, index) => [dimensions[index], { score }]));
-  assert.deepEqual(operationRating(values(1, 4, 4, 2, 3, 4)), { score: 81, base: 75, bonus: 6, dimensions: 5 });
-  assert.equal(operationRating(values(2, 4, 4, 2, 3, 4)).score, 78);
-  assert.equal(operationRating(values(5, 4, 4, 2, 3, 4)).score, 75);
-  assert.equal(operationRating(values(null, 4, 4, 2, 3, 4)).score, 75);
-  assert.equal(operationRating(values(1, 2, 2, 5, 1, 4)).bonus, 0);
-  assert.equal(operationRating(values(1, 3, 4, 5, 3, 3)).bonus, 0);
-  assert.equal(operationRating(values(1, 5, 5, 5, 5, 5)).score, 100);
-  assert.deepEqual(operationRating(values(2, 4, 4, null, null, 4)), { score: 83, base: 80, bonus: 3, dimensions: 3 });
-  assert.equal(operationRating(values(1, 4, null, 5, 4, 4)), null);
-  assert.equal(operationRating(values(1, null, 4, null, null, 4)), null);
+  const rating = (luck, estimates, stability = 4, strategy = 3) => operationRating({
+    luck: { score: luck }, strategy: { score: strategy }, stability: { score: stability }
+  }, estimates);
+  const solid = { calculation: 3.2, stability: 3.6, strategy: 2.8, attack: 2.8, courage: 2.2 };
+  assert.deepEqual(rating(1, solid), { score: 9.6, base: 9, bonus: 0.6, dimensions: 5 });
+  assert.equal(rating(2, solid).score, 9.3);
+  assert.equal(rating(5, solid).score, 9);
+  assert.equal(rating(null, solid).score, 9);
+  assert.equal(rating(1, { ...solid, calculation: 2 }).bonus, 0);
+  assert.equal(rating(1, solid, 3).bonus, 0);
+  assert.equal(rating(1, solid, 3, 4).bonus, 0.6);
+  assert.equal(rating(1, { ...solid, calculation: 5 }).score, 10);
+  assert.equal(rating(1, { ...solid, calculation: undefined }), null);
+  assert.equal(rating(1, { calculation: 4, stability: 4 }), null);
+  assert.equal(rating(3, { calculation: 1, stability: 1, attack: 1 }).score, 0);
+});
+
+test('continuous operation samples can separate players within the same displayed tiers', () => {
+  const metrics = empty();
+  for (const key of dimensions) metrics[key] = { total: 24, samples: 48 };
+  const before = scores(metrics, 48);
+  const low = operationRating(before, operationEstimates(metrics, before));
+  metrics.calculation.total = 26;
+  const after = scores(metrics, 48);
+  assert.deepEqual(after, before);
+  const high = operationRating(after, operationEstimates(metrics, after));
+  assert.ok(high.score > low.score);
 });
 
 test('season operation ranks differ from BB ranks, pool samples, share ties and skip voids and old metrics', () => {
@@ -147,7 +162,7 @@ test('season operation ranks differ from BB ranks, pool samples, share ties and 
     }
     return record;
   };
-  const skilled = { luck: .15, calculation: .9, stability: .9, strategy: .8 };
+  const skilled = { luck: .15, calculation: .60, stability: .82, strategy: .48, attack: .24, courage: .10 };
   const lucky = { luck: .9, calculation: .35, stability: .4 };
   const settings = { ratingVersion: 4, hands: 12 };
   const players = [['lucky', null, 120, 0, 12], ['skilled', null, -120, 0, 12], ['tie', null, 0, 0, 12]];
@@ -160,7 +175,7 @@ test('season operation ranks differ from BB ranks, pool samples, share ties and 
   const byUid = new Map(result.players.map(row => [row.uid, row]));
   assert.equal(byUid.get('lucky').place, 1);
   assert.equal(byUid.get('skilled').operationPlace, 1);
-  assert.equal(byUid.get('skilled').operationRating.bonus, 6);
+  assert.equal(byUid.get('skilled').operationRating.bonus, 0.6);
   assert.equal(byUid.get('tie').operationPlace, 1);
   assert.equal(byUid.get('lucky').operationPlace, 3);
   assert.equal(byUid.get('pending').matches, 2);

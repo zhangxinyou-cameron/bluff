@@ -1,4 +1,4 @@
-const { empty, scores, title } = require('./match-stats');
+const { empty, scores, title, operationEstimates } = require('./match-stats');
 const { FIRST_OPERATION_VERSION, operationRating, rankOperations } = require('./operation-rating');
 
 const close = value => Math.abs(value) < 1e-9 ? 0 : value;
@@ -96,7 +96,7 @@ function aggregate(league, matches, netPoints = false) {
     const titleValues = ratingVersion < 4 ? scores(rating.metrics, rating.hands, ratingVersion, true) : values;
     return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(titleValues, ratingVersion),
       operationMatches: ratingVersion >= FIRST_OPERATION_VERSION ? rating.matches : 0,
-      operationRating: ratingVersion >= FIRST_OPERATION_VERSION ? operationRating(values) : null };
+      operationRating: ratingVersion >= FIRST_OPERATION_VERSION ? operationRating(values, operationEstimates(rating.metrics, values)) : null };
   });
   const teams = [...teamRows.values()].map(({ contributions, ...row }) => {
     const eligible = [...contributions.values()].filter(player => player.matches >= league.minMatches).sort((a, b) => b.bb - a.bb);

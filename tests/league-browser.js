@@ -303,20 +303,21 @@ async function main() {
     services.stats.deleteMatches([archivedId]);
     const titleFixtureId = '11a355b1-81bc-4735-89bb-141480f63899';
     const exemplar = saved.players.find(player => player.uid === uids[0]);
-    const tiers = { luck: 3, strategy: 3, calculation: 5, courage: 4, attack: 3, stability: 3 };
-    const values = Object.fromEntries(Object.entries(tiers).map(([key, score]) => [key, { score, samples: 24, observed: null }]));
+    const titleMetrics = Object.fromEntries(Object.entries({ luck: .5, strategy: .5, calculation: .95,
+      courage: .36, attack: .24, stability: .65 }).map(([key, rate]) => [key, { total: rate * 24, samples: 24 }]));
+    const values = scores(titleMetrics, 24);
     services.stats.save({ ...saved, id: titleFixtureId, leagueCode: null, name: '组合称号赛报', hands: 24,
-      players: [{ ...exemplar, hands: 24, title: '精算牌手', values }] });
+      players: [{ ...exemplar, hands: 24, title: '精算牌手', metrics: titleMetrics, values }] });
     const titleReport = await api(host, '/api/reports?id=' + titleFixtureId);
     assert.equal(titleReport.players[0].title, '算准敢押');
     assert.deepEqual(titleReport.players[0].values, values);
-    assert.deepEqual(titleReport.players[0].operationRating, { score: 75, base: 75, bonus: 0, dimensions: 5 });
+    assert.deepEqual(titleReport.players[0].operationRating, { score: 10, base: 10, bonus: 0, dimensions: 5 });
     const reportPage = await host.context().newPage();
     try {
       await reportPage.goto(base + '/club.html?report=' + titleFixtureId);
       await reportPage.getByText('算准敢押 · 24 手', { exact: true }).waitFor();
       await reportPage.getByRole('heading', { name: '本场操作评分' }).waitFor();
-      await reportPage.getByText('75 分', { exact: true }).waitFor();
+      await reportPage.getByText('10.0 分', { exact: true }).waitFor();
     } finally {
       await reportPage.close();
       services.stats.deleteMatches([titleFixtureId]);
@@ -347,7 +348,7 @@ async function main() {
     assert.equal(league.teamStandings.filter(team => team.place !== undefined).length, 2);
     assert.equal(league.teamStandings.filter(team => team.mvp.length > 0).length, 2);
     const records = [services.stats.matches.get(first.matchId), saved];
-    const operationMetrics = { luck: .14, strategy: .79, calculation: .79, courage: .24, attack: .33, stability: .89 };
+    const operationMetrics = { luck: .14, strategy: .48, calculation: .64, courage: .10, attack: .24, stability: .81 };
     try {
       for (const record of records) services.stats.save({ ...record, hands: 24, players: record.players.map(player => {
         if (player.uid !== uids[0]) return player;
@@ -357,12 +358,12 @@ async function main() {
       const updated = await detail(host, code);
       const myUpdated = updated.players.find(player => player.uid === uids[0]);
       assert.equal(myUpdated.operationPlace, 1);
-      assert.equal(myUpdated.operationRating.bonus, 6);
+      assert.equal(myUpdated.operationRating.bonus, 0.6);
       assert.equal(myUpdated.points, personal.points);
-      await overview.getByText('逆风 +6', { exact: true }).waitFor();
+      await overview.getByText('逆风 +0.6', { exact: true }).waitFor();
       await overview.getByRole('link', { name: '赛季操作评分' }).click();
       const board = host.locator('#operation-rank');
-      await board.getByRole('row').filter({ hasText: '牌手1' }).getByText('逆风 +6', { exact: true }).waitFor();
+      await board.getByRole('row').filter({ hasText: '牌手1' }).getByText('逆风 +0.6', { exact: true }).waitFor();
       assert.equal(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     } finally {
       for (const record of records) services.stats.save(record);

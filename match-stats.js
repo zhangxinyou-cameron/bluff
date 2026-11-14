@@ -17,6 +17,7 @@ const tierThresholds = {
 };
 const empty = () => Object.fromEntries(dimensions.map(key => [key, { total: 0, samples: 0 }]));
 const mean = metric => metric.samples ? metric.total / metric.samples : 0;
+const smoothed = ({ total, samples }) => (total + 3) / (samples + 6);
 
 function add(metrics, key, value) {
   metrics[key].samples++;
@@ -29,11 +30,24 @@ function scores(metrics, hands, version = RATING_VERSION, historicalPrecision = 
     if (hands < 10 || samples < 5) return [key, { score: null, samples }];
     const continuous = version >= 3 || key === 'luck' || (key === 'courage' && version >= 2);
     const rarity = key === 'luck' ? Math.min(0.25, 0.17 * (metrics[key].rarity || 0) * Math.sqrt(20 / Math.max(20, samples))) : 0;
-    const average = version >= 3 ? (total + 3) / (samples + 6) + rarity : mean(metrics[key]);
+    const average = version >= 3 ? smoothed(metrics[key]) + rarity : mean(metrics[key]);
     const score = version >= 4
       ? Math.min(samples < 12 ? 4 : 5, 1 + tierThresholds[key].filter(threshold => average >= threshold).length)
       : historicalPrecision ? Math.round(10 + 40 * clamp(average)) / 10 : Math.round(1 + 4 * clamp(average));
     return [key, { score, samples, observed: continuous ? null : total }];
+  }));
+}
+
+// Use continuous estimates for the overall rating without changing the six
+// published tiers. The tier boundaries still put different metrics on a common scale.
+function operationEstimates(metrics, values) {
+  return Object.fromEntries(dimensions.filter(key => key !== 'luck' && values[key]?.score != null).map(key => {
+    const boundaries = [0, ...tierThresholds[key], 1];
+    const grades = [1, 1.5, 2.5, 3.5, 4.5, 5];
+    const average = clamp(smoothed(metrics[key]));
+    const upper = boundaries.findIndex((boundary, index) => index > 0 && boundary >= average);
+    const fraction = (average - boundaries[upper - 1]) / (boundaries[upper] - boundaries[upper - 1]);
+    return [key, Math.min(values[key].samples < 12 ? 4.5 : 5, grades[upper - 1] + fraction * (grades[upper] - grades[upper - 1]))];
   }));
 }
 
@@ -248,4 +262,4 @@ class MatchStats {
   }
 }
 
-module.exports = { MatchStats, RATING_VERSION, dimensions, empty, scores, title };
+module.exports = { MatchStats, RATING_VERSION, dimensions, empty, scores, title, operationEstimates };
