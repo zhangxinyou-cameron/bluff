@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { aggregate } = require('../league-points');
 const { MatchStats, dimensions, empty, scores, title } = require('../match-stats');
+const { operationRating } = require('../operation-rating');
 const { dealtLuck, evaluateDecision } = require('../rating-model');
 const E = require('../public/poker-engine');
 
@@ -120,6 +121,53 @@ test('league titles use the same combinations as individual reports', () => {
   const result = aggregate(league, [completed], true).players[0];
   assert.equal(result.title, '冷静精算');
   assert.equal(result.title, title(scores(metrics, 30)));
+});
+
+test('low luck rewards good decisions within a cap instead of rewarding poor play or deducting for good luck', () => {
+  const values = (luck, strategy, calculation, courage, attack, stability) => Object.fromEntries(
+    [luck, strategy, calculation, courage, attack, stability].map((score, index) => [dimensions[index], { score }]));
+  assert.deepEqual(operationRating(values(1, 4, 4, 2, 3, 4)), { score: 81, base: 75, bonus: 6, dimensions: 5 });
+  assert.equal(operationRating(values(2, 4, 4, 2, 3, 4)).score, 78);
+  assert.equal(operationRating(values(5, 4, 4, 2, 3, 4)).score, 75);
+  assert.equal(operationRating(values(null, 4, 4, 2, 3, 4)).score, 75);
+  assert.equal(operationRating(values(1, 2, 2, 5, 1, 4)).bonus, 0);
+  assert.equal(operationRating(values(1, 3, 4, 5, 3, 3)).bonus, 0);
+  assert.equal(operationRating(values(1, 5, 5, 5, 5, 5)).score, 100);
+  assert.deepEqual(operationRating(values(2, 4, 4, null, null, 4)), { score: 83, base: 80, bonus: 3, dimensions: 3 });
+  assert.equal(operationRating(values(1, 4, null, 5, 4, 4)), null);
+  assert.equal(operationRating(values(1, null, 4, null, null, 4)), null);
+});
+
+test('season operation ranks differ from BB ranks, pool samples, share ties and skip voids and old metrics', () => {
+  const set = (record, overridesByUid) => {
+    for (const player of record.players) {
+      const use = overridesByUid[player.uid];
+      if (!use) continue;
+      for (const key of dimensions) player.metrics[key] = { total: player.hands * (use[key] ?? .5), samples: player.hands };
+    }
+    return record;
+  };
+  const skilled = { luck: .15, calculation: .9, stability: .9, strategy: .8 };
+  const lucky = { luck: .9, calculation: .35, stability: .4 };
+  const settings = { ratingVersion: 4, hands: 12 };
+  const players = [['lucky', null, 120, 0, 12], ['skilled', null, -120, 0, 12], ['tie', null, 0, 0, 12]];
+  const first = set(match('1', 20, [...players, ['pending', null, 0, 0, 12]], settings), { lucky, skilled, tie: skilled, pending: skilled });
+  const second = set(match('2', 20, players, settings), { lucky, skilled, tie: skilled });
+  const voided = set(match('3', 20, [['pending', null, 0, 0, 12]], { ...settings, voidReason: '作废' }), { pending: skilled });
+  const older = set(match('4', 20, [['old', null, 0, 0, 12], ['pending', null, 0, 0, 12]], { ...settings, ratingVersion: 3 }),
+    { old: skilled, pending: skilled });
+  const result = aggregate({ minHands: 1, minMatches: 2, teams: [] }, [first, second, voided, older], true);
+  const byUid = new Map(result.players.map(row => [row.uid, row]));
+  assert.equal(byUid.get('lucky').place, 1);
+  assert.equal(byUid.get('skilled').operationPlace, 1);
+  assert.equal(byUid.get('skilled').operationRating.bonus, 6);
+  assert.equal(byUid.get('tie').operationPlace, 1);
+  assert.equal(byUid.get('lucky').operationPlace, 3);
+  assert.equal(byUid.get('pending').matches, 2);
+  assert.equal(byUid.get('pending').operationMatches, 1);
+  assert.equal(byUid.get('pending').operationPlace, undefined);
+  assert.equal(byUid.get('old').operationRating, null);
+  assert.deepEqual(result.operationOrder, ['skilled', 'tie', 'lucky', 'pending', 'old']);
 });
 
 test('folded royal counts as dealt luck, while a shared board royal earns no rarity bonus', () => {

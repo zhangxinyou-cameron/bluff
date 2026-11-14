@@ -78,7 +78,7 @@ class Leagues {
     const version = scoreFormat(league);
     const format = version === NET_FORMAT ? points : formats.get(version);
     if (!format) throw error(503, '当前联赛规则版本未安装');
-    const { players, teams: teamStandings, ledger } = format.aggregate(league, matches, version === NET_FORMAT);
+    const { players, operationOrder, teams: teamStandings, ledger } = format.aggregate(league, matches, version === NET_FORMAT);
     const flags = flagCatalog(this.flagsDirectory);
     const flagIds = new Set(flags.map(flag => flag.id));
     const personalMvps = new Set(ledger.filter(entry => entry.mvpUids?.includes(uid)).map(entry => entry.id));
@@ -95,7 +95,7 @@ class Leagues {
             knockouts: personal.knockouts ?? null } } : {}),
           ...(room ? { seats, capacity: room.maxPlayers } : {}) };
       }),
-      locked: this.lockedMembers(league, matches), players, teamStandings, ledger };
+      locked: this.lockedMembers(league, matches), players, operationOrder, teamStandings, ledger };
   }
 
   matchForCode(code) {

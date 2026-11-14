@@ -46,7 +46,9 @@ test('duplicate, stale and altered bank requests never repeat a transaction',()=
   invariant(g);
 });
 test('zero chips do not eliminate a player; loans restore participation in a later hand',()=>{
-  const g=table();E.startHand(g);play(g,true);
+  const g=table();let seed=728;
+  const fixedDeal=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/2**32);
+  E.startHand(g,fixedDeal);play(g,true);
   assert.equal(g.phase,'hand_over');assert.ok(g.players.some(p=>p.chips===0));
   for(const p of g.players){assert.equal(p.eliminatedHand,null);if(p.chips===0)assert.equal(bank(g,p.id,'borrow',2000).ok,true);}
   confirm(g);assert.equal(E.startHand(g),true);assert.ok(g.players.every(p=>p.isActive));

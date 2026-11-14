@@ -188,6 +188,26 @@
       el('tbody', {}, rows.map(cells => el('tr', {}, cells.map(value => el('td', {}, value)))))));
   }
 
+  function operationValue(rating) {
+    return rating ? el('span', { className: 'club-operation-value' }, el('strong', {}, `${rating.score} 分`),
+      rating.bonus ? badge(`逆风 +${rating.bonus}`, true) : null) : '—';
+  }
+
+  function operationBoard(players, league) {
+    const season = Boolean(league);
+    return panel(season ? '操作评分榜' : '本场操作评分',
+      muted(season ? `按本届新版样本合并后评分。至少出赛 ${league.minMatches} 场新版计分场才可排名。` : '百分制，评价本场决策。'),
+      players.some(player => player.operationRating) ? standings(
+        ['排名', '玩家', '操作评分', season ? '计分场次' : '有效维度'], players.map(player => [
+          player.operationPlace ?? (player.operationRating ? '待达标' : player.operationMatches === 0 ? '历史口径' : '样本不足'),
+          personName(player), operationValue(player.operationRating), season ? player.operationMatches :
+            player.operationRating ? `${player.operationRating.dimensions}/5` : '—'
+        ])) : muted('还没有足够的新版操作样本。'),
+      el('details', { className: 'club-details' }, el('summary', {}, '操作评分怎么算？'),
+        muted('满分 100，算力 35%、稳健 30%、博弈 15%、进攻 15%、胆量 5%。至少三项出分，必须包括算力和稳健；缺少的项不计，按已有项权重折算。'),
+        muted('牌运 1–2 档、基础分至少 60，且稳健或博弈达到 4 档时，分别加 6 或 3 分，最高 100 分。净收益不参与评分，同分并列。')));
+  }
+
   function dimensionList(values) {
     return el('div', { className: 'club-dimensions' }, Object.entries(dimensionNames).map(([key, name]) => {
       const item = values[key];
@@ -285,6 +305,10 @@
               el('small', { className: 'club-overview-unit' }, league.format === 'points:2' ? ' BB' : ' 分')]),
             metric('MVP 次数', player?.mvps ?? 0),
             metric('击杀数', knockoutCount), metric('参赛场次', player?.matches ?? 0)),
+          el('div', { className: 'club-overview-operation' },
+            leagueCode ? link('赛季操作评分', '#operation-rank') : link('赛季操作评分', leagueUrl(league.code) + '#operation-rank'),
+            player?.operationRating ? operationValue(player.operationRating) : el('small', {}, '待样本'),
+            player?.operationPlace ? badge(`第 ${player.operationPlace} 名`, true) : null),
           el('div', { className: 'club-overview-recent' }, el('h3', {}, '近期赛果'),
             previous.length ? list(previous.map(match => [
               link(match.name, reportUrl(match.id)),
@@ -367,7 +391,7 @@
 
   function leagueManagement(league) {
     if (!league.endedAt) return panel('主办方操作', action('结算联赛', () => {
-      if (confirm('结算后冻结积分榜和队伍名单，继续吗？')) run(() => mutate('finish'));
+      if (confirm('结算后冻结积分榜、操作评分榜和队伍名单，继续吗？')) run(() => mutate('finish'));
     }, true));
     const remove = action('删除联赛', () => {
       if (confirm(`删除「${league.name}」？联赛、队伍、积分榜和该联赛的比赛赛报将永久删除，并从参赛者的历史记录中移除。`)) {
@@ -415,6 +439,9 @@
       league.players.map(player => [player.place || '待达标', personName(player), player.matches, player.hands,
         number(player.average), number(player.points), number(player.profit), ...(netPoints?[]:[number(player.bb)]), number(player.bb100)])));
     const expanded = [...view.querySelectorAll('details')].map(details => details.open);
+    const rowsByUid = new Map(league.players.map(player => [player.uid, player]));
+    const operations = operationBoard(league.operationOrder.map(uid => rowsByUid.get(uid)), league);
+    operations.id = 'operation-rank';
     display(el('header', { className: 'club-hero club-league-heading' },
       badge(league.endedAt ? '已结算' : '进行中', !league.endedAt), el('h1', {}, league.name),
       muted(`房间号 ${league.code} · ${netPoints?'净收益每 1 BB 计 1 分':`每场至少 ${league.minHands} 手`} · 上榜至少 ${league.minMatches} 场`),
@@ -425,12 +452,13 @@
       }, true)) : null),
       leagueOverview(league, flags), matchPanel, teamsView(league, flags),
       el('div', { className: 'club-detail-columns' },
-        el('div', {}, showTeamRank(league, flags), personal,
+        el('div', {}, personal, operations, showTeamRank(league, flags),
           league.players.length ? el('details', { className: 'club-details' }, el('summary', {}, '联赛六维与称号'),
             ratingHelp(), muted('打过新版计分场后，六维使用新版样本；只有旧赛报的玩家按旧口径换算为 1–5 分。'),
             grid(league.players.map(dimensionsCard))) : null),
         el('div', {}, history, owner && !active ? leagueManagement(league) : null)));
     [...view.querySelectorAll('details')].forEach((details, index) => { if (expanded[index]) details.open = true; });
+    if (id === 1 && location.hash === '#operation-rank') operations.scrollIntoView();
   }
 
   async function showReport() {
@@ -445,7 +473,9 @@
       muted(`${date(report.endedAt)} · ${report.hands} 手 · ${deck[rules.deckMode]} · ${blinds[rules.blindMode]} · 大盲 ${rules.bigBlind} · ${rules.allowBuyIn ? rules.buyInThreshold == null ? '可贷款买入' : `筹码低于 ${rules.buyInThreshold} 可买入` : '淘汰制'}`),
       report.voidReason ? muted('本场已作废 · ' + report.voidReason) : null,
       report.leagueCode && identity.leagues ? buttonLink('返回所属联赛', leagueUrl(report.leagueCode), true) : null,
-      panel('赛果', net), ratingHelp(report.ratingVersion), grid(report.players.map(dimensionsCard)));
+      panel('赛果', net), report.ratingVersion >= 4 ? operationBoard([...report.players].sort((a, b) =>
+        (a.operationPlace ?? Infinity) - (b.operationPlace ?? Infinity))) : null,
+      ratingHelp(report.ratingVersion), grid(report.players.map(dimensionsCard)));
   }
 
   async function showProfile() {

@@ -1,4 +1,5 @@
 const { empty, scores, title } = require('./match-stats');
+const { FIRST_OPERATION_VERSION, operationRating, rankOperations } = require('./operation-rating');
 
 const close = value => Math.abs(value) < 1e-9 ? 0 : value;
 const compareRecord = (a, b) => close(b.average - a.average) || close(b.bb100 - a.bb100);
@@ -40,9 +41,10 @@ function aggregate(league, matches, netPoints = false) {
       for (const field of ['hands', 'profit', 'bb']) row[field] += player[field];
       row.points += netPoints ? player.bb : player.points;
       const version = match.ratingVersion ?? 1;
-      if (!row.ratings.has(version)) row.ratings.set(version, { hands: 0, metrics: empty() });
+      if (!row.ratings.has(version)) row.ratings.set(version, { hands: 0, matches: 0, metrics: empty() });
       const rating = row.ratings.get(version);
       rating.hands += player.hands;
+      if (player.hands > 0) rating.matches++;
       for (const key of Object.keys(rating.metrics)) {
         rating.metrics[key].total += player.metrics[key].total;
         rating.metrics[key].samples += player.metrics[key].samples;
@@ -92,7 +94,9 @@ function aggregate(league, matches, netPoints = false) {
     const rating = ratings.get(ratingVersion);
     const values = scores(rating.metrics, rating.hands, ratingVersion);
     const titleValues = ratingVersion < 4 ? scores(rating.metrics, rating.hands, ratingVersion, true) : values;
-    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(titleValues, ratingVersion) };
+    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(titleValues, ratingVersion),
+      operationMatches: ratingVersion >= FIRST_OPERATION_VERSION ? rating.matches : 0,
+      operationRating: ratingVersion >= FIRST_OPERATION_VERSION ? operationRating(values) : null };
   });
   const teams = [...teamRows.values()].map(({ contributions, ...row }) => {
     const eligible = [...contributions.values()].filter(player => player.matches >= league.minMatches).sort((a, b) => b.bb - a.bb);
@@ -107,7 +111,10 @@ function aggregate(league, matches, netPoints = false) {
       team.direct = records.reduce((sum, record) => sum + record.points, 0) / records.reduce((sum, record) => sum + record.matches, 0);
     }
   }
-  return { players: rank(players, league.minMatches, compareRecord), ledger,
+  const operations = rankOperations(players, league.minMatches);
+  const byUid = new Map(operations.map(player => [player.uid, player]));
+  return { players: rank(players.map(player => byUid.get(player.uid)), league.minMatches, compareRecord),
+    operationOrder: operations.map(player => player.uid), ledger,
     teams: rank(teams, league.minMatches, (a, b) => close(b.average - a.average) ||
       close((b.direct ?? 0) - (a.direct ?? 0)) || close(b.bbPerMatch - a.bbPerMatch)) };
 }

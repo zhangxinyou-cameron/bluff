@@ -2,6 +2,7 @@ const { error, profile } = require('./accounts');
 const { readFile } = require('node:fs/promises');
 const { loginDestination } = require('./access');
 const { scores, title } = require('./match-stats');
+const { FIRST_OPERATION_VERSION, operationRating, rankOperations } = require('./operation-rating');
 
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -87,8 +88,14 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
       } else if (!report.players.some(player => player.uid === uid)) throw error(404, '赛报不存在');
       const { players, ...summary } = report;
       const ratingVersion = report.ratingVersion ?? 1;
+      const operations = ratingVersion >= FIRST_OPERATION_VERSION ? new Map(rankOperations(players.map(row => ({
+        uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values)
+      }))).map(row => [row.uid, row])) : new Map();
       json(res, { ...summary, ratingVersion, players: players.map(({ metrics, ...row }) => {
-        if (ratingVersion >= 4) return { ...row, title: title(row.values, ratingVersion) };
+        if (ratingVersion >= FIRST_OPERATION_VERSION) {
+          const { operationRating, operationPlace } = operations.get(row.uid);
+          return { ...row, title: title(row.values, ratingVersion), operationRating, operationPlace };
+        }
         if (ratingVersion === 1) return { ...row, values: scores(metrics, row.hands, ratingVersion) };
         return { ...row, values: Object.fromEntries(Object.entries(row.values).map(([key, value]) =>
           [key, { ...value, score: value.score === null ? null : Math.round(value.score) }])) };

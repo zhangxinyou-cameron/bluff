@@ -155,6 +155,12 @@ small, .club-muted { color: var(--muted); }
 .club-overview-results .club-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .club-overview-results .club-metric { min-height: 3.15rem; align-content: center; }
 .club-overview-unit { font-size: .58em; color: var(--gold); }
+.club-overview-operation {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .5rem; padding: .46rem .55rem;
+  margin-top: .55rem; border: 1px solid var(--line); border-radius: .45rem; font-size: .8rem;
+}
+.club-operation-value { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .4rem; color: var(--gold); }
+.club-operation-value .club-badge { padding: .08rem .33rem; font-size: .7rem; }
 .club-overview-recent { margin-top: .75rem; font-size: .85rem; }
 .club-overview-recent .club-list { margin: .25rem 0 0; }
 .club-overview-recent li { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .15rem .55rem; padding: .36rem 0; }
