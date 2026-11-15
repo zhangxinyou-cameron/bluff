@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const E = require('./public/poker-engine');
 const { clamp, dealtLuck, decisionSnapshot, evaluateDecision } = require('./rating-model');
-const { combinationTitle } = require('./rating-titles');
+const { combinationTitle, sampleTitle } = require('./rating-titles');
 const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
@@ -62,11 +62,11 @@ function title(values, version = RATING_VERSION) {
     ['主动进攻', attack.score, 3.8, attack.samples],
     ['精算牌手', calculation.score, 3.8, calculation.samples]
   ];
-  if (version < 3) return candidates.slice(0, 5).filter(([, score, minimum]) => score >= minimum).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  if (version < 3) return candidates.slice(0, 5).filter(([, score, minimum]) => score >= minimum).sort((a, b) => b[1] - a[1])[0]?.[0] ?? sampleTitle(values);
   const ranked = candidates.filter(([name, score, minimum, samples]) => samples >= 12 && score >= minimum &&
     (name !== '稳健派' || (score >= 4 && calculation.score >= 3.5)))
     .sort((a, b) => (b[1] - b[2]) - (a[1] - a[2]));
-  return ranked[0]?.[0] ?? null;
+  return ranked[0]?.[0] ?? sampleTitle(values);
 }
 
 class MatchStats {

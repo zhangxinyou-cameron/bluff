@@ -10,6 +10,7 @@
   const readRegistry=()=>{try{return JSON.parse(localStorage.getItem(registryKey)||'{}');}catch(_){return{};}};
   const clientId=(()=>{try{let id=localStorage.getItem('river_client_id');if(!id){id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);localStorage.setItem('river_client_id',id);}return id;}catch(_){return '';}})();
   let rendering=false,renderErrors=0,betNoticeTimer=null;
+  let lastBankPrompt=null,autoBankHand=null;
   let warningUntil=0;
   const now=()=>Date.now()+clockOffset;
   // Keep the result screen locked until a server snapshot carries the settled runout.
@@ -91,6 +92,24 @@
     }
     betNoticeTimer=setTimeout(()=>{notice.hidden=true;},duration);
   }
+  function updateBankPrompt(state, locked){
+    const dialog=node('bankDialog');
+    if(autoBankHand!==null&&(state?.phase!=='hand_over'||state.handNumber!==autoBankHand||state.endRequested)){
+      autoBankHand=null;
+      dialog.close();
+    }
+    if(locked||document.hidden||lastBankPrompt===state?.handNumber)return;
+    const player=state?.players.find(p=>p.id===mySeatId);
+    if(!bankBuyInOffer(state,player))return;
+    if(!dialog.open&&document.querySelector('dialog[open]'))return;
+    lastBankPrompt=state.handNumber;
+    if(!dialog.open){autoBankHand=state.handNumber;openBank(true);}
+  }
+  function closeBank(){
+    autoBankHand=null;
+    const dialog=node('bankDialog');
+    if(dialog.open)dialog.close();
+  }
   function draw(force=false){
     if(stopped)return;
     const data=lastSnapshot;if(!data)return;
@@ -101,6 +120,7 @@
     node('activityPanel').hidden=false;node('connectionBanner').hidden=false;
     window.RiverTable?.layout(data,remaining);
     if(!state){
+      updateBankPrompt(null,true);
       waitingRoom=data.waiting||null;
       node('leagueWaitHeader').hidden=!lobbyLeague;
       node('leagueReadyState').hidden=!waitingRoom;
@@ -151,7 +171,10 @@
         if(data.reportId){
           const link=document.createElement('a');link.href='/club.html?report='+encodeURIComponent(data.reportId);link.className='final-report-link';link.textContent='查看六维赛报';result.append(link);
         }else if(data.reportPending){const note=document.createElement('p');note.textContent='赛报暂未保存，服务器正在重试';result.append(note);}
-      }else showResultScreen(state);
+      }else{
+        showResultScreen(state);
+        node('nextHandBankBtn').disabled=locked;
+      }
       node('nextHandBtn')&&(node('nextHandBtn').disabled=!!pending||!wsConnected||(state.nextHandReady||[]).includes(mySeatId));
     }else{showGameScreen();renderGame(view);}
     const blindRule=state.blindRule||(state.variant==='short'?'ante':'standard'),blindLabel=blindRule==='ante'?'全员底注＋庄家盲注':blindRule==='position'?'下家1倍 / 下下家半倍':'标准大小盲';
@@ -164,8 +187,9 @@
     node('actionAnnouncement').dataset.action=last?.action||'deal';
     if(presentation?.timeline&&remaining>0){const count=state.communityCards.length,board=state.runoutBoards?.length||1,showingHands=now()-presentation.startedAt<presentation.timeline.showHandsMs;node('phaseText').textContent=showingHands?'亮牌展示':'梭哈跑马';node('actionAnnouncementText').textContent=showingHands?'争池玩家手牌已亮 · 先看牌再跑马':`${presentation.timeline.boardCount>1?'第 '+board+' 组 · ':''}${count>=5?'河牌已开 · 停留看牌':count===4?'转牌已开':count===3?'翻牌已开':'等待翻牌'} · 慢慢揭晓`;}
     if(data.paused)status('异常检测已暂停牌局以保护筹码，请联系房主检查','error');
-    if(node('bankDialog').open){renderBank(state);if(locked&&state.phase==='hand_over'){node('bankBorrowBtn').disabled=true;node('bankRepayBtn').disabled=true;if(remaining>0)node('bankStatus').textContent='结算过场中，稍后可借还款。';}}
     window.RiverTable?.render(data,locked);
+    updateBankPrompt(state,locked);
+    if(node('bankDialog').open){renderBank(state);if(locked&&state.phase==='hand_over'){node('bankBorrowBtn').disabled=true;node('bankRepayBtn').disabled=true;if(remaining>0)node('bankStatus').textContent='结算过场中，稍后可借还款。';}}
     updateClock();
   }
   function updateClock(){
@@ -211,6 +235,7 @@
       }
       if(data.type==='error'||data.type==='roomClosed'||data.type==='kicked'){
         stopped=true;intentional=true;wsConnected=false;clearTimeout(reconnectTimer);window.RiverTable?.stop();
+        closeBank();
         const code=entry?.roomCode||roomCode;
         if(data.fatal||data.type==='roomClosed'||data.type==='kicked'){
           try{const registry=readRegistry();delete registry[code];if(data.type==='kicked'&&data.rejoinToken)registry[code]={roomCode:code,isHost:false,rejoinToken:data.rejoinToken,updatedAt:Date.now()};localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}
@@ -261,6 +286,7 @@
     }
     intentional=true;if(ws){ws.onclose=null;ws.close();}
     g=null;clientGameState=null;lastSnapshot=null;lastVersion=-1;events.length=0;seen.clear();eventId=0;pending=null;sequence=0;stopped=false;retry=0;
+    lastBankPrompt=null;closeBank();
     const saved=safeRead(),known=readRegistry()[code];
     const resume=saved?.roomCode===code?saved:known;
     entry=freshJoin||!resume?{roomCode:code,isHost:host}:resume;sequence=entry.commandSeq||0;
@@ -268,7 +294,7 @@
     node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=true;
     roomCode=code;isHost=host;mySeatId=host?0:-1;seats=[];wsConnected=false;showWaitScreen();setConnectionStatus('正在连接房间…');lastReceived=0;connect();
   }
-  function leave({reload=true,permanent=false}={}){intentional=true;stopped=true;save();raw({type:'leaveRoom',permanent});clearTimeout(reconnectTimer);if(permanent&&entry){try{const registry=readRegistry();delete registry[entry.roomCode];localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}}entry=null;save();window.RiverTable?.stop();ws?.close();if(reload)location.href=location.pathname;}
+  function leave({reload=true,permanent=false}={}){intentional=true;stopped=true;save();raw({type:'leaveRoom',permanent});clearTimeout(reconnectTimer);if(permanent&&entry){try{const registry=readRegistry();delete registry[entry.roomCode];localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}}entry=null;save();window.RiverTable?.stop();closeBank();ws?.close();if(reload)location.href=location.pathname;}
   createRoom=()=>begin(String(Math.floor(100000+Math.random()*900000)),true);
   joinRoom=()=>{const code=node('roomCodeInput').value.trim();if(!/^\d{6}$/.test(code)){alert('请输入6位数字房间号');return;}begin(code,false,!!identity?.profile);};
   connectWS=()=>{if(!entry)entry={roomCode:roomCode||'100000',isHost};lastReceived=0;connect();};
@@ -295,6 +321,10 @@
     const url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download=`牌局-${roomCode}-记录.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
   node('reconnectBtn').onclick=()=>{if(stopped){const saved=readRegistry()[roomCode];if(saved?.rejoinToken){begin(roomCode,false);return;}location.reload();return;}lastReceived=0;recover('正在手动同步最新状态…');};
+  document.addEventListener('close',event=>{
+    if(event.target===node('bankDialog')&&!event.target.open)autoBankHand=null;
+    if(event.target.tagName==='DIALOG')paint(true);
+  },true);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&entry){lastReceived=0;recover('已回到牌桌，正在核对状态…');}});
   window.addEventListener('online',()=>{if(entry){lastReceived=0;recover('网络已恢复，正在核对状态…');}});
   window.addEventListener('pageshow',event=>{if(event.persisted&&entry){lastReceived=0;recover('页面恢复，正在核对状态…');}});

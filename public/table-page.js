@@ -445,15 +445,17 @@ function showResultScreen(g) {
   const confirmed = g.nextHandReady || [];
   const finished = tournamentFinished(g);
   const mine = confirmed.includes(mySeatId);
+  const minePlayer=g.players.find(p=>p.id===mySeatId);
+  const buyIn=bankBuyInOffer(g,minePlayer);
+  document.getElementById('nextHandBankBtn').hidden=!buyIn;
   nextBtn.style.display = finished && !isHost ? 'none' : 'block';
   nextBtn.disabled = !finished && mine;
   nextBtn.textContent = finished ? '查看最终排名' : mine ? '已确认 · 等待其他玩家' : '确认下一局';
   document.getElementById('nextHandStatus').textContent = finished ? isHost?'本场已结束，点击下方按钮向所有玩家公布最终排名。':'本场已结束，等待房主公布排名…' : `下一局需要所有在线玩家确认 · ${humans.filter(p=>confirmed.includes(p.id)).length}/${humans.length}`;
   if(g.allowBuyIn) {
     const funded=g.players.filter(p=>!p.disconnected&&p.connected!==false&&(p.chips>0||p.isAI)).length;
-    const minePlayer=g.players.find(p=>p.id===mySeatId);
     document.getElementById('nextHandStatus').textContent=funded<2?'至少需要两名有筹码的玩家，请先到银行买入。':`银行无限场 · 所有在线玩家确认后继续 · ${humans.filter(p=>confirmed.includes(p.id)).length}/${humans.length}`;
-    if(!mine&&minePlayer?.chips===0)nextBtn.textContent='确认观战下一局 · 也可先到银行买入';
+    if(!mine&&minePlayer?.chips===0)nextBtn.textContent='确认观战下一局';
   }
   document.getElementById('nextHandPlayers').innerHTML = humans.map(p=>`<span class="confirmation-person ${confirmed.includes(p.id)?'confirmed':''}">${confirmed.includes(p.id)?'✓':'○'} ${escapeHtml(p.name)}</span>`).join('');
   if(!finished&&g.players.filter(p=>!p.disconnected&&p.connected!==false&&(p.chips>0||(g.allowBuyIn&&p.isAI))).length<2)document.getElementById('nextHandStatus').textContent=g.allowBuyIn?'至少需要两名有筹码的玩家。可邀请玩家加入，或到银行买入。':'至少需要两名有筹码的玩家。可邀请玩家加入或等待其他玩家返回。';
@@ -602,10 +604,23 @@ function updateSessionTools(state) {
   finish.title='若本手仍在进行，会打完本手再结算';
   if(document.getElementById('bankDialog').open)renderBank(state);
 }
-function openBank() {
+function bankBuyInOffer(state, player) {
+  // An unlimited threshold does not provide a low-balance signal. Prompt only at zero.
+  if(!state?.allowBuyIn||state.endRequested||state.phase!=='hand_over'||!player||player.disconnected||player.connected===false||player.isAI)return 0;
+  const needsBuyIn=state.buyInThreshold==null?player.chips===0:PokerEngine.belowBuyInThreshold(state,player);
+  return needsBuyIn?PokerEngine.loanAllowance(state,player):0;
+}
+function openBank(suggestBuyIn = false) {
   const state=isHost?g:clientGameState;
-  if(!state?.allowBuyIn)return;
-  bankNotice='';renderBank(state);document.getElementById('bankDialog').showModal();
+  const dialog=document.getElementById('bankDialog');
+  if(!state?.allowBuyIn||dialog.open)return;
+  bankNotice='';
+  if(suggestBuyIn){
+    const player=state.players.find(p=>p.id===mySeatId);
+    const allowance=bankBuyInOffer(state,player);
+    if(allowance>0)document.getElementById('bankAmount').value=Math.min(allowance,Math.max(1,player.initialChips-player.chips));
+  }
+  renderBank(state);dialog.showModal();
 }
 function renderBank(state) {
   const p=state.players.find(player=>player.id===mySeatId);
@@ -613,6 +628,9 @@ function renderBank(state) {
   document.getElementById('bankChips').textContent=p.chips;
   document.getElementById('bankDebt').textContent=p.bankDebt;
   document.getElementById('bankNet').textContent=p.chips-p.bankDebt;
+  const prompt=document.getElementById('bankBuyInPrompt');
+  prompt.hidden=!bankBuyInOffer(state,p);
+  if(!prompt.hidden)prompt.textContent=p.chips===0?'你的筹码已用完。贷款买入后可以参加下一局，也可以关闭银行选择观战。':`当前筹码 ${p.chips}，低于买入门槛 ${state.buyInThreshold}。你可以先买入，再确认下一局。`;
   const available=state.phase==='hand_over'&&!state.endRequested&&wsConnected&&!bankPending;
   const allowance=PokerEngine.loanAllowance(state,p),used=p.borrowHandNumber===state.handNumber?p.borrowedThisHand||0:0;
   const threshold=state.buyInThreshold==null?'筹码门槛不限':`筹码须低于 ${state.buyInThreshold}`;

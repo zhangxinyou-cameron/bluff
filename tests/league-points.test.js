@@ -49,7 +49,7 @@ test('six-dimensional results require enough hands and valid samples and can be 
   const result = scores(metrics, 10);
   assert.equal(result.luck.score, null);
   assert.equal(result.courage.score, 4);
-  assert.equal(title(result), null);
+  assert.equal(title(result), '初露牌风');
   assert.equal(title(scores(metrics, 10, 2, true), 2), '胆大心细');
   const league = { minHands: 1, minMatches: 1, teams: [] };
   const first = match('1', 20, [['a', null, 0, 50]]);
@@ -104,9 +104,9 @@ test('all 15,625 complete rating profiles resolve to 49 reachable titles', () =>
   assert.equal(title(profile([3, 3, 5, 5, 3, 3])), '胆大心细');
   assert.equal(title(profile([3, 5, 5, 5, 5, 5])), '全能牌手');
   assert.equal(title(profile([5, 5, 5, 5, 5, 5])), '天时地利');
-  assert.equal(title(profile([5, 4, 4, 4, 4, 4], 11)), null);
+  assert.equal(title(profile([5, 4, 4, 4, 4, 4], 11)), '初露牌风');
   assert.equal(title(profile([null, null, null, null, null, 5])), '稳健派');
-  assert.equal(title(profile([null, 3, 3, 3, 3, 3])), null);
+  assert.equal(title(profile([null, 3, 3, 3, 3, 3])), '初露牌风');
 });
 
 test('league titles use the same combinations as individual reports', () => {
@@ -121,6 +121,31 @@ test('league titles use the same combinations as individual reports', () => {
   const result = aggregate(league, [completed], true).players[0];
   assert.equal(result.title, '冷静精算');
   assert.equal(result.title, title(scores(metrics, 30)));
+});
+
+test('a settled player with qualifying scores receives a title even with incomplete observations', () => {
+  const metrics = empty();
+  for (const key of ['luck', 'calculation', 'stability', 'strategy']) metrics[key] = { total: 5, samples: 10 };
+  const game = E.createGame([0, 1, 2].map(id => ({ id, chips: 2000 })), 20, { allowBuyIn: true });
+  game.players[1].disconnected = true;
+  game.players[2].chips = 0;
+  game.players[0].chips += 2000;
+  game.phase = 'tournament_over';
+  const room = { game, settings: {} };
+  const stats = Object.assign(Object.create(MatchStats.prototype), { matches: new Map(), save(match) { this.matches.set(match.id, match); } });
+  stats.open(room);
+  room.statistics.hands = 10;
+  for (const id of [0, 1, 2]) room.statistics.players.set(id, { uid: String(id), hands: id ? 10 : 4, metrics: id ? metrics : empty() });
+  stats.finish(room);
+  const report = stats.matches.get(room.reportId);
+  for (const id of ['1', '2']) {
+    const player = report.players.find(row => row.uid === id);
+    assert.ok(operationRating(player.values, operationEstimates(player.metrics, player.values)));
+    assert.equal(player.title, '初露牌风');
+  }
+  assert.equal(report.players.find(row => row.uid === '0').title, null);
+  const season = aggregate({ minHands: 1, minMatches: 1, teams: [] }, [report], true);
+  assert.deepEqual(season.players.filter(player => player.operationRating).map(player => player.title), ['初露牌风', '初露牌风']);
 });
 
 test('low luck rewards good decisions within a cap instead of rewarding poor play or deducting for good luck', () => {
@@ -258,7 +283,7 @@ test('rare hands visibly lift the rating and five good folds cannot confer a ste
   metrics.luck.rarity = 1;
   const royal = scores(metrics, 16);
   assert.ok(royal.luck.score > baseline.luck.score);
-  assert.equal(title(baseline), null);
+  assert.equal(title(baseline), '初露牌风');
   delete metrics.luck.rarity;
   metrics.stability = { samples: 16, total: 14 };
   assert.equal(title(scores(metrics, 16)), '知进知退');

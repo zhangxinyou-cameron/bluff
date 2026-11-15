@@ -20,6 +20,10 @@ const pairs = {
   'attack stability': ['以攻带守', '稳中取利', '攻守兼备']
 };
 
+function sampleTitle(values) {
+  return Object.values(values).some(value => Number.isFinite(value.score)) ? '初露牌风' : null;
+}
+
 function combinationTitle(values) {
   const luck = values.luck.samples >= 12 ? values.luck.score : null;
   const styles = Object.keys(specialists).map(key => [key, values[key].samples >= 12 ? values[key].score : null]);
@@ -39,11 +43,11 @@ function combinationTitle(values) {
     const [[style, score]] = strengths;
     return specialists[style][score - 4];
   }
-  if (luck === null || styles.some(([, score]) => score === null)) return null;
+  if (luck === null || styles.some(([, score]) => score === null)) return sampleTitle(values);
   const average = styles.reduce((sum, [, score]) => sum + score, 0) / styles.length;
   if (luck === 4) return '顺风牌手';
   if (luck <= 2 && average >= 2.6) return '逆风磨砺';
   return average >= 2.6 ? '均衡牌手' : '磨牌新秀';
 }
 
-module.exports = { combinationTitle };
+module.exports = { combinationTitle, sampleTitle };

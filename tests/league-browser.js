@@ -6,7 +6,8 @@ const { chromium } = require('playwright');
 const { WebSocket } = require('ws');
 const { server, wss, access, roomManager, configureIdentity } = require('../server');
 const { passwordRecord } = require('../access');
-const { scores } = require('../match-stats');
+const { empty, scores } = require('../match-stats');
+const { createDeck } = require('../public/poker-engine');
 
 async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bluff-league-test-'));
@@ -258,17 +259,39 @@ async function main() {
     await settings(memberHost, 'allowBuyInSel', 'yes');
     await settings(memberHost, 'deckModeSel', 'standard');
     await settings(memberHost, 'bigBlindSel', '50');
-    await host.locator('#waitRuleSummary').filter({ hasText: '1 倍底注 50' }).waitFor();
+    const updatedRules = await memberHost.evaluate(() => ({ ...settings, buyInThreshold: 2000, loanPerHandLimit: 800 }));
+    await send(memberHost, 'roomSettings', { settings: updatedRules });
+    await host.locator('#waitRuleSummary').filter({ hasText: '筹码低于 2000 可买入' }).waitFor();
     await host.locator('#readyBtn').click();
     await idle(host);
+    await memberHost.locator('#leagueReadyState').filter({ hasText: '全员已准备' }).waitFor();
     await memberHost.locator('#startBtn').click();
     await memberHost.waitForFunction(() => g?.handNumber === 1);
+    const secondRoom=roomManager.games.get(await memberHost.evaluate(()=>roomCode));
+    const cardById = new Map(createDeck('standard').map(card => [card.id, card]));
+    const deckOrder = [1, 2, 17, 33, 3, 21, 4, 49, 6, 14, 29, 45, 7, 37, 8, 50].reverse();
+    const holeIds = [[12, 25], [0, 18]];
+    const dealt = new Set([...deckOrder, ...holeIds.flat()]);
+    secondRoom.game.players.forEach((player, index) => { player.holeCards = holeIds[index].map(id => cardById.get(id)); });
+    secondRoom.game.deck = [...[...cardById.values()].filter(card => !dealt.has(card.id)), ...deckOrder.map(id => cardById.get(id))];
     await takeAction(pages.slice(0, 2), 'allin', memberHost);
     await takeAction(pages.slice(0, 2), 'call', memberHost);
     for (const page of pages.slice(0, 2)) await page.locator('#voteTwiceBtn').click();
     await host.locator('#resultScreen').waitFor({ state: 'visible' });
-    const account = await host.evaluate(() => clientGameState.players.find(player => player.id === mySeatId));
-    await send(host, 'bank', { kind: 'borrow', amount: 500, handNumber: 1, bankVersion: account.bankVersion });
+    await host.locator('#bankDialog[open]').waitFor();
+    await host.locator('#bankBuyInPrompt').filter({ hasText:'筹码已用完' }).waitFor();
+    assert.equal(await host.locator('#bankAmount').inputValue(), '800');
+    assert.equal(await memberHost.locator('#bankDialog').evaluate(dialog => dialog.open), false);
+    await host.getByRole('button', { name: '关闭银行' }).click();
+    assert.equal(await host.locator('#nextHandBtn').textContent(), '确认观战下一局');
+    await host.evaluate(() => RiverSession.sync());
+    await idle(host);
+    assert.equal(await host.locator('#bankDialog').evaluate(dialog => dialog.open), false);
+    await host.locator('#nextHandBankBtn').click();
+    await host.locator('#bankAmount').fill('500');
+    await host.locator('#bankBorrowBtn').click();
+    await host.locator('#bankStatus').filter({ hasText: '操作成功' }).waitFor();
+    await host.getByRole('button', { name: '关闭银行' }).click();
     const original=await host.evaluate(()=>clientGameState.players.find(player=>player.id===mySeatId));
     await host.locator('#awayBtn').click();
     await host.locator('#homeProfile').waitFor();
@@ -277,15 +300,19 @@ async function main() {
     await idle(host);
     const returned=await host.evaluate(()=>clientGameState.players.find(player=>player.id===mySeatId));
     assert.deepEqual([returned.id,returned.chips,returned.bankDebt],[original.id,original.chips,500]);
+    await host.locator('#bankBuyInPrompt').filter({ hasText:'低于买入门槛 2000' }).waitFor();
+    assert.equal(await host.locator('#bankAmount').inputValue(), '300');
+    await host.getByRole('button', { name: '关闭银行' }).click();
     const newcomer=directGuest;
     await newcomer.goto(base+'/club.html?league='+code);
     await newcomer.getByRole('link',{name:'加入比赛房'}).click();
     await idle(newcomer);
     await newcomer.locator('#nextHandBtn').waitFor();
     assert.equal(await newcomer.evaluate(()=>clientGameState.players.find(player=>player.id===mySeatId).chips),2000);
+    assert.equal(await newcomer.locator('#bankDialog').evaluate(dialog => dialog.open), false);
+    assert.equal(await newcomer.locator('#nextHandBankBtn').isHidden(), true);
     for(const page of [host,memberHost,newcomer]){await page.locator('#nextHandBtn').click();await idle(page);}
     await memberHost.waitForFunction(()=>g.handNumber===2);
-    const secondRoom=roomManager.games.get(await memberHost.evaluate(()=>roomCode));
     while(['pre_flop','flop','turn','river'].includes(secondRoom.game.phase))await takeAction([host,memberHost,newcomer],'fold',memberHost);
     assert.equal(await finish(memberHost), second.id);
     const result = await api(host, '/api/reports?id=' + second.id);
@@ -306,16 +333,23 @@ async function main() {
     const titleMetrics = Object.fromEntries(Object.entries({ luck: .5, strategy: .5, calculation: .95,
       courage: .36, attack: .24, stability: .65 }).map(([key, rate]) => [key, { total: rate * 24, samples: 24 }]));
     const values = scores(titleMetrics, 24);
+    const partialMetrics = empty();
+    for (const dimension of ['luck', 'calculation', 'stability', 'strategy']) partialMetrics[dimension] = { total: 5, samples: 10 };
+    const partialPlayer = saved.players.find(player => player.uid === uids[1]);
     services.stats.save({ ...saved, id: titleFixtureId, leagueCode: null, name: '组合称号赛报', hands: 24,
-      players: [{ ...exemplar, hands: 24, title: '精算牌手', metrics: titleMetrics, values }] });
+      players: [{ ...exemplar, hands: 24, title: '精算牌手', metrics: titleMetrics, values },
+        { ...partialPlayer, hands: 10, title: null, metrics: partialMetrics, values: scores(partialMetrics, 10) }] });
     const titleReport = await api(host, '/api/reports?id=' + titleFixtureId);
     assert.equal(titleReport.players[0].title, '算准敢押');
     assert.deepEqual(titleReport.players[0].values, values);
     assert.deepEqual(titleReport.players[0].operationRating, { score: 10, base: 10, bonus: 0, dimensions: 5 });
+    assert.ok(titleReport.players[1].operationRating);
+    assert.equal(titleReport.players[1].title, '初露牌风');
     const reportPage = await host.context().newPage();
     try {
       await reportPage.goto(base + '/club.html?report=' + titleFixtureId);
       await reportPage.getByText('算准敢押 · 24 手', { exact: true }).waitFor();
+      await reportPage.getByText('初露牌风 · 10 手', { exact: true }).waitFor();
       await reportPage.getByRole('heading', { name: '本场操作评分' }).waitFor();
       await reportPage.getByText('10.0 分', { exact: true }).waitFor();
     } finally {

@@ -50,6 +50,8 @@ input::placeholder { color: #819087; }
 .wait-screen .wait-btn:disabled { opacity:.55; cursor:default; }
 .next-hand-panel { margin-top:24px; padding:22px; border:1px solid #526548; border-radius:10px; background:#263a28; }
 .next-hand-status { font-size:12px; color:#c8d4bc; line-height:1.8; margin:0 0 14px; }
+#nextHandBankBtn { margin-bottom:10px; background:#6b5734; border-color:#c8ad72; color:#fff2c8; }
+#nextHandBankBtn:disabled { opacity:.5; }
 .confirmation-list { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:18px; }
 .confirmation-person { padding:7px 10px; border:1px solid #596349; color:#abb49e; border-radius:20px; font-size:11px; }
 .confirmation-person.confirmed { color:#e2d7ad; background:#435035; border-color:#af9d64; }
@@ -196,6 +198,7 @@ input[type=range] { accent-color: var(--gold); min-height: 24px; }
 .bank-header h2 { margin:0; font-size:23px; font-weight:500; letter-spacing:2px; }
 .bank-header .panel-kicker { margin-bottom:8px; }
 .bank-note { font-size:11px; color:var(--muted); line-height:1.9; margin:16px 0; }
+.bank-buy-in-prompt { margin:16px 0; padding:10px 12px; border-left:3px solid #c8ad72; color:#fff2c8; background:#393923; border-radius:6px; font-size:13px; line-height:1.6; }
 .bank-balances { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:24px 0; }
 .bank-balances>div { min-width:0; padding:12px 8px; border:1px solid #3c5539; border-radius:7px; color:var(--muted); font-size:10px; text-align:center; }
 .bank-balances strong { display:block; font-size:18px; font-weight:500; color:var(--gold); margin-top:8px; overflow-wrap:anywhere; }

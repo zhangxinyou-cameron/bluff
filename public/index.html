@@ -41,6 +41,7 @@
 </section>
 <dialog id="bankDialog" class="bank-dialog" aria-labelledby="bankTitle">
   <div class="bank-header"><div><div class="panel-kicker">TABLE BANK</div><h2 id="bankTitle">筹码银行</h2></div><button class="sound-button" onclick="document.getElementById('bankDialog').close()" aria-label="关闭银行">关闭</button></div>
+  <p id="bankBuyInPrompt" class="bank-buy-in-prompt" hidden></p>
   <p class="bank-note">虚拟筹码，无利息。贷款即买入筹码，最终按筹码减去未还贷款排名。</p>
   <div class="bank-balances"><div>现有筹码<strong id="bankChips">0</strong></div><div>未还贷款<strong id="bankDebt">0</strong></div><div>净筹码<strong id="bankNet">0</strong></div></div>
   <label class="field-label" for="bankAmount">本次操作筹码</label><input id="bankAmount" class="room-code-input" type="number" min="1" step="1" inputmode="numeric" value="1000">
@@ -212,6 +213,7 @@
       </div>
       <div class="player-results" id="playerResults"></div>
       <div class="next-hand-panel"><div class="panel-kicker">ONE MORE HAND?</div><p id="nextHandStatus" class="next-hand-status" role="status" aria-live="polite"></p><div id="nextHandPlayers" class="confirmation-list"></div>
+      <button class="action-next" id="nextHandBankBtn" onclick="openBank(true)" aria-haspopup="dialog" hidden>先贷款买入</button>
       <button class="action-next" id="nextHandBtn" onclick="nextHand()">确认下一局</button></div>
     </div>
   </div>

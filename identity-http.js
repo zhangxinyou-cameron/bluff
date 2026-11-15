@@ -3,6 +3,7 @@ const { readFile } = require('node:fs/promises');
 const { loginDestination } = require('./access');
 const { scores, title, operationEstimates } = require('./match-stats');
 const { FIRST_OPERATION_VERSION, operationRating, rankOperations } = require('./operation-rating');
+const { sampleTitle } = require('./rating-titles');
 
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -96,9 +97,10 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
           const { operationRating, operationPlace } = operations.get(row.uid);
           return { ...row, title: title(row.values, ratingVersion), operationRating, operationPlace };
         }
-        if (ratingVersion === 1) return { ...row, values: scores(metrics, row.hands, ratingVersion) };
-        return { ...row, values: Object.fromEntries(Object.entries(row.values).map(([key, value]) =>
-          [key, { ...value, score: value.score === null ? null : Math.round(value.score) }])) };
+        const values = ratingVersion === 1 ? scores(metrics, row.hands, ratingVersion) :
+          Object.fromEntries(Object.entries(row.values).map(([key, value]) =>
+            [key, { ...value, score: value.score === null ? null : Math.round(value.score) }]));
+        return { ...row, values, title: row.title ?? sampleTitle(values) };
       }) });
     } else {
       const reports = [...stats.matches.values()].filter(report => report.status === 'completed' && report.players.some(row => row.uid === uid))
