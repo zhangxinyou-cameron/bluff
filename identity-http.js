@@ -3,7 +3,7 @@ const { readFile } = require('node:fs/promises');
 const { loginDestination } = require('./access');
 const { scores, title, operationEstimates } = require('./match-stats');
 const { FIRST_OPERATION_VERSION, operationRating, rankOperations } = require('./operation-rating');
-const { sampleTitle } = require('./rating-titles');
+const { practicalTitle } = require('./rating-titles');
 
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -89,18 +89,20 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
       } else if (!report.players.some(player => player.uid === uid)) throw error(404, '赛报不存在');
       const { players, ...summary } = report;
       const ratingVersion = report.ratingVersion ?? 1;
-      const operations = ratingVersion >= FIRST_OPERATION_VERSION ? new Map(rankOperations(players.map(row => ({
-        uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values, operationEstimates(row.metrics, row.values))
-      }))).map(row => [row.uid, row])) : new Map();
+      const operations = ratingVersion >= FIRST_OPERATION_VERSION ? new Map(rankOperations(players.map(row => {
+        const estimates = operationEstimates(row.metrics, row.values);
+        return { uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values, estimates),
+          title: title(row.values, ratingVersion, estimates) };
+      })).map(row => [row.uid, row])) : new Map();
       json(res, { ...summary, ratingVersion, players: players.map(({ metrics, ...row }) => {
         if (ratingVersion >= FIRST_OPERATION_VERSION) {
-          const { operationRating, operationPlace } = operations.get(row.uid);
-          return { ...row, title: title(row.values, ratingVersion), operationRating, operationPlace };
+          const { operationRating, operationPlace, title: styleTitle } = operations.get(row.uid);
+          return { ...row, title: styleTitle, operationRating, operationPlace };
         }
         const values = ratingVersion === 1 ? scores(metrics, row.hands, ratingVersion) :
           Object.fromEntries(Object.entries(row.values).map(([key, value]) =>
             [key, { ...value, score: value.score === null ? null : Math.round(value.score) }]));
-        return { ...row, values, title: row.title ?? sampleTitle(values) };
+        return { ...row, values, title: row.title ?? practicalTitle(values) };
       }) });
     } else {
       const reports = [...stats.matches.values()].filter(report => report.status === 'completed' && report.players.some(row => row.uid === uid))

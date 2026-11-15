@@ -344,12 +344,12 @@ async function main() {
     assert.deepEqual(titleReport.players[0].values, values);
     assert.deepEqual(titleReport.players[0].operationRating, { score: 10, base: 10, bonus: 0, dimensions: 5 });
     assert.ok(titleReport.players[1].operationRating);
-    assert.equal(titleReport.players[1].title, '初露牌风');
+    assert.equal(titleReport.players[1].title, '借势试探');
     const reportPage = await host.context().newPage();
     try {
       await reportPage.goto(base + '/club.html?report=' + titleFixtureId);
       await reportPage.getByText('算准敢押 · 24 手', { exact: true }).waitFor();
-      await reportPage.getByText('初露牌风 · 10 手', { exact: true }).waitFor();
+      await reportPage.getByText('借势试探 · 10 手', { exact: true }).waitFor();
       await reportPage.getByRole('heading', { name: '本场操作评分' }).waitFor();
       await reportPage.getByText('10.0 分', { exact: true }).waitFor();
     } finally {

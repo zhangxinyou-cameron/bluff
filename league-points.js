@@ -94,9 +94,10 @@ function aggregate(league, matches, netPoints = false) {
     const rating = ratings.get(ratingVersion);
     const values = scores(rating.metrics, rating.hands, ratingVersion);
     const titleValues = ratingVersion < 4 ? scores(rating.metrics, rating.hands, ratingVersion, true) : values;
-    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(titleValues, ratingVersion),
+    const estimates = ratingVersion >= FIRST_OPERATION_VERSION ? operationEstimates(rating.metrics, values) : undefined;
+    return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(titleValues, ratingVersion, estimates),
       operationMatches: ratingVersion >= FIRST_OPERATION_VERSION ? rating.matches : 0,
-      operationRating: ratingVersion >= FIRST_OPERATION_VERSION ? operationRating(values, operationEstimates(rating.metrics, values)) : null };
+      operationRating: estimates ? operationRating(values, estimates) : null };
   });
   const teams = [...teamRows.values()].map(({ contributions, ...row }) => {
     const eligible = [...contributions.values()].filter(player => player.matches >= league.minMatches).sort((a, b) => b.bb - a.bb);

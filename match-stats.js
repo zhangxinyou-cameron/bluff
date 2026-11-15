@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const E = require('./public/poker-engine');
 const { clamp, dealtLuck, decisionSnapshot, evaluateDecision } = require('./rating-model');
-const { combinationTitle, sampleTitle } = require('./rating-titles');
+const { combinationTitle, practicalTitle } = require('./rating-titles');
 const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
@@ -51,8 +51,8 @@ function operationEstimates(metrics, values) {
   }));
 }
 
-function title(values, version = RATING_VERSION) {
-  if (version >= 4) return combinationTitle(values);
+function title(values, version = RATING_VERSION, estimates) {
+  if (version >= 4) return combinationTitle(values, estimates);
   const { luck, strategy, calculation, courage, attack, stability } = values;
   const candidates = [
     ['好运连连', luck.score, 3.8, luck.samples],
@@ -62,11 +62,11 @@ function title(values, version = RATING_VERSION) {
     ['主动进攻', attack.score, 3.8, attack.samples],
     ['精算牌手', calculation.score, 3.8, calculation.samples]
   ];
-  if (version < 3) return candidates.slice(0, 5).filter(([, score, minimum]) => score >= minimum).sort((a, b) => b[1] - a[1])[0]?.[0] ?? sampleTitle(values);
+  if (version < 3) return candidates.slice(0, 5).filter(([, score, minimum]) => score >= minimum).sort((a, b) => b[1] - a[1])[0]?.[0] ?? practicalTitle(values);
   const ranked = candidates.filter(([name, score, minimum, samples]) => samples >= 12 && score >= minimum &&
     (name !== '稳健派' || (score >= 4 && calculation.score >= 3.5)))
     .sort((a, b) => (b[1] - b[2]) - (a[1] - a[2]));
-  return ranked[0]?.[0] ?? sampleTitle(values);
+  return ranked[0]?.[0] ?? practicalTitle(values);
 }
 
 class MatchStats {
@@ -253,7 +253,7 @@ class MatchStats {
       const points = prior?.scoringVersion === 2 ? profit / game.bigBlind :
         100 * (standings.length - player.place - (tied - 1) / 2) / Math.max(1, standings.length - 1);
       players.push({ ...row, profit, bb: profit / game.bigBlind, initial: player.initialChips, chips: player.chips,
-        debt: player.bankDebt, place: player.place, points, values, title: title(values) });
+        debt: player.bankDebt, place: player.place, points, values, title: title(values, RATING_VERSION, operationEstimates(row.metrics, values)) });
     }
     this.save({ ...prior, id: stats.id, status: 'completed', endedAt: Date.now(), startedAt: stats.startedAt,
       rules: stats.rules, hands: stats.hands, players, participantUids: players.map(player => player.uid),

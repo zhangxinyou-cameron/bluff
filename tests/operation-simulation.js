@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const E = require('../public/poker-engine');
 const AI = require('../poker-ai');
-const { MatchStats, scores, operationEstimates } = require('../match-stats');
+const { MatchStats, scores, operationEstimates, title } = require('../match-stats');
 const { operationIndex, operationRating } = require('../operation-rating');
 
 const rng = initial => {
@@ -133,7 +133,7 @@ for (const deckMode of ['standard', 'short']) for (let match = 0; match < 6; mat
     assert.ok(rating, '80 hands should produce enough scoring samples');
     rows.push({ deckMode, match, tier: tiers[tierFor(player.id)], ...rating, luck: values.luck.score,
       bb: (player.chips - player.bankDebt - player.initialChips) / 20,
-      raw, tiers: Object.values(values).map(value => value.score) });
+      raw, title: title(values, undefined, estimates), tiers: Object.values(values).map(value => value.score), estimates });
   }
 }
 
@@ -158,5 +158,10 @@ assert.ok(summary.expertAbove9 >= 6, 'At least half of the expert results should
 assert.ok(summary.bands[2] + summary.bands[3] > ordered.length / 2, 'Middle bands should contain the most scores');
 if (!holdout) assert.deepEqual([summary.min, summary.max], [0, 10], 'Calibration covers both endpoints');
 console.log(summary);
+const common = rows.filter(row => row.score >= 7 && row.score < 9);
+const titles = Object.groupBy(common, row => row.title);
+assert.ok(Object.keys(titles).length >= 8, 'The usual rating range should show multiple play styles');
+assert.ok(Object.values(titles).every(group => group.length <= common.length / 3), 'A single title should not dominate the usual rating range');
+console.log('Titles among 7.0–8.9 ratings:', Object.fromEntries(Object.entries(titles).map(([name, players]) => [name, players.length])));
 console.log('960 hands, 12 seeded matches with rotating seats, ' + (holdout ? 'holdout' : 'calibration'));
 if (process.argv.includes('--raw')) console.log(JSON.stringify(rows));

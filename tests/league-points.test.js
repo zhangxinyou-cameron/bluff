@@ -49,7 +49,7 @@ test('six-dimensional results require enough hands and valid samples and can be 
   const result = scores(metrics, 10);
   assert.equal(result.luck.score, null);
   assert.equal(result.courage.score, 4);
-  assert.equal(title(result), '初露牌风');
+  assert.equal(title(result), '算着跟注');
   assert.equal(title(scores(metrics, 10, 2, true), 2), '胆大心细');
   const league = { minHands: 1, minMatches: 1, teams: [] };
   const first = match('1', 20, [['a', null, 0, 50]]);
@@ -86,7 +86,7 @@ test('each dimension can reach tier five with sustained performance, capped with
   assert.ok(Object.values(scores(metrics, 24)).every(value => Number.isInteger(value.score) && value.score >= 1));
 });
 
-test('all 15,625 complete rating profiles resolve to 49 reachable titles', () => {
+test('all 15,625 complete rating profiles resolve to a broad set of reachable titles', () => {
   const titles = new Set();
   const profile = (tiers, samples = 24) => Object.fromEntries(dimensions.map((key, i) => [key, { score: tiers[i], samples }]));
   for (let code = 0; code < 5 ** dimensions.length; code++) {
@@ -95,18 +95,27 @@ test('all 15,625 complete rating profiles resolve to 49 reachable titles', () =>
     assert.ok(result, 'No title for ' + tiers.join(','));
     titles.add(result);
   }
-  assert.equal(titles.size, 49);
-  assert.equal(title(profile([3, 3, 3, 3, 3, 3])), '均衡牌手');
-  assert.equal(title(profile([1, 1, 1, 1, 1, 1])), '磨牌新秀');
+  assert.ok(titles.size >= 70);
+  assert.equal(title(profile([3, 3, 3, 3, 3, 3])), '五路兼顾');
+  assert.equal(title(profile([1, 1, 1, 1, 1, 1])), '少诈多看');
   assert.equal(title(profile([3, 5, 4, 3, 3, 3])), '以诈破局');
   assert.equal(title(profile([3, 4, 5, 3, 3, 3])), '精算布局');
   assert.equal(title(profile([3, 5, 5, 3, 3, 3])), '运筹帷幄');
   assert.equal(title(profile([3, 3, 5, 5, 3, 3])), '胆大心细');
   assert.equal(title(profile([3, 5, 5, 5, 5, 5])), '全能牌手');
   assert.equal(title(profile([5, 5, 5, 5, 5, 5])), '天时地利');
-  assert.equal(title(profile([5, 4, 4, 4, 4, 4], 11)), '初露牌风');
+  assert.equal(title(profile([5, 4, 4, 4, 4, 4], 11)), '五路兼顾');
   assert.equal(title(profile([null, null, null, null, null, 5])), '稳健派');
-  assert.equal(title(profile([null, 3, 3, 3, 3, 3])), '初露牌风');
+  assert.equal(title(profile([null, 3, 3, 3, 3, 3])), '五路兼顾');
+});
+
+test('the common middle tiers distinguish balanced value betting, value-first and weak-hand pressure', () => {
+  const tiers = [3, 2, 2, 2, 4, 3];
+  const profile = values => Object.fromEntries(dimensions.map((key, i) => [key, { score: values[i], samples: 24 }]));
+  const balanced = { strategy: 2, calculation: 2, courage: 2.1, attack: 3.55, stability: 3.43 };
+  assert.equal(title(profile(tiers), 4, balanced), '稳注取值');
+  assert.equal(title(profile(tiers), 4, { ...balanced, attack: 3.8, stability: 3.2 }), '择机取值');
+  assert.equal(title(profile([3, 2, 2, 3, 4, 3]), 4, { ...balanced, attack: 3.8, courage: 2.7 }), '弱牌敢打');
 });
 
 test('league titles use the same combinations as individual reports', () => {
@@ -120,7 +129,7 @@ test('league titles use the same combinations as individual reports', () => {
   metrics.stability.total = 25;
   const result = aggregate(league, [completed], true).players[0];
   assert.equal(result.title, '冷静精算');
-  assert.equal(result.title, title(scores(metrics, 30)));
+  assert.equal(result.title, title(result.values, 4, operationEstimates(metrics, result.values)));
 });
 
 test('a settled player with qualifying scores receives a title even with incomplete observations', () => {
@@ -141,11 +150,11 @@ test('a settled player with qualifying scores receives a title even with incompl
   for (const id of ['1', '2']) {
     const player = report.players.find(row => row.uid === id);
     assert.ok(operationRating(player.values, operationEstimates(player.metrics, player.values)));
-    assert.equal(player.title, '初露牌风');
+    assert.equal(player.title, '借势试探');
   }
   assert.equal(report.players.find(row => row.uid === '0').title, null);
   const season = aggregate({ minHands: 1, minMatches: 1, teams: [] }, [report], true);
-  assert.deepEqual(season.players.filter(player => player.operationRating).map(player => player.title), ['初露牌风', '初露牌风']);
+  assert.deepEqual(season.players.filter(player => player.operationRating).map(player => player.title), ['借势试探', '借势试探']);
 });
 
 test('low luck rewards good decisions within a cap instead of rewarding poor play or deducting for good luck', () => {
@@ -283,7 +292,7 @@ test('rare hands visibly lift the rating and five good folds cannot confer a ste
   metrics.luck.rarity = 1;
   const royal = scores(metrics, 16);
   assert.ok(royal.luck.score > baseline.luck.score);
-  assert.equal(title(baseline), '初露牌风');
+  assert.equal(title(baseline), '见势收手');
   delete metrics.luck.rarity;
   metrics.stability = { samples: 16, total: 14 };
   assert.equal(title(scores(metrics, 16)), '知进知退');
