@@ -179,7 +179,9 @@ async function main() {
       const before = room.game.revision;
       const seat = room.game.players[room.game.currentPlayerIndex].id;
       const ids = await Promise.all(group.map(page => page.evaluate(() => mySeatId)));
-      await group[ids.indexOf(seat)].locator('.action-' + action).click();
+      const page = group[ids.indexOf(seat)];
+      await page.locator('.action-' + action).click();
+      if (action === 'fold') await page.locator('#foldConfirm').click();
       await tableHost.waitForFunction(revision => g.revision > revision, before);
     }
     async function finish(tableHost = host) {
@@ -453,6 +455,7 @@ async function main() {
     await pages[2].getByRole('button',{name:'关闭互动'}).click();
     const soloActor = soloRoom.game.players[soloRoom.game.currentPlayerIndex].id === 0 ? pages[2] : host;
     await soloActor.locator('.action-fold').click();
+    await soloActor.locator('#foldConfirm').click();
     await pages[2].locator('#finishSessionBtn').click();
     await pages[2].getByRole('link', { name: '查看六维赛报' }).waitFor();
     const soloReport=await api(host,'/api/reports?id='+soloMatch.matchId);

@@ -394,13 +394,12 @@ function renderGame(g) {
     return;
   }
 
-  let html = `<div class="action-row"><button class="action-btn action-fold" onclick="playerAction('fold')">弃牌</button>`;
+  let html = `<div class="action-row betting-actions">`;
   if (canCheck) html += `<button class="action-btn action-check" onclick="playerAction('check')">过牌</button>`;
   else html += `<button class="action-btn action-call" onclick="playerAction('call')">跟注 ${Math.min(need,cp.chips)}</button>`;
-  html += `</div><div class="action-row">`;
   if (canRaise) html += `<button class="action-btn action-raise" onclick="startRaise()">${(g.betLevel||0)+1}-BET · 加注至 ${g.currentBet+g.minRaise}</button>`;
   if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" onclick="playerAction('allin')">梭哈 ${cp.chips}</button>`;
-  html += '</div>';
+  html += `<button class="action-btn action-fold" aria-haspopup="dialog" onclick="playerAction('fold')">弃牌</button></div>`;
   panel.innerHTML = html;
   document.getElementById('actionHint').textContent = `轮到你了`;
 }

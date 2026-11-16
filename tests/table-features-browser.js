@@ -13,7 +13,9 @@ const {chromium}=require('playwright');const{server,wss,access,roomManager}=requ
   let pages,host,room;
   async function step(kind){const g=room.game,actor=g.players[g.currentPlayerIndex],page=pages[actor.id],revision=g.revision;
     await page.waitForFunction(rev=>(isHost?g:clientGameState)?.revision===rev&&!!document.querySelector('#actionPanel button'),revision);
-    const selector=kind||((await page.locator('.action-check').count())?'check':'call');await page.locator('.action-'+selector).click();await host.waitForFunction(rev=>g.revision>rev,revision);await idle(page);
+    const selector=kind||((await page.locator('.action-check').count())?'check':'call');await page.locator('.action-'+selector).click();
+    if(selector==='fold')await page.locator('#foldConfirm').click();
+    await host.waitForFunction(rev=>g.revision>rev,revision);await idle(page);
   }
   async function finish(mode='normal'){
     let actions=0;while(!['hand_over','tournament_over'].includes(room.game.phase)){

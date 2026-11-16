@@ -89,6 +89,7 @@ const { passwordRecord } = require('../access');
     await acting.waitForFunction(() => document.getElementById('audioStatus').textContent.includes('72 BPM'));
     const before = await acting.evaluate(() => window.__audioStarts);
     await acting.locator('.action-fold').click();
+    await acting.locator('#foldConfirm').click();
     assert.ok(await acting.evaluate(() => window.__audioStarts) > before);
     await host.locator('#resultScreen').waitFor({ state: 'visible' });
     for (const [width, height] of sizes) {

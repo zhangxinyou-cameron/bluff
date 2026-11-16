@@ -19,7 +19,7 @@ const E=require('../public/poker-engine');
   const current=page=>page.evaluate(()=>isHost?g:clientGameState);
   const closeSocial=async page=>{if(await page.locator('#socialDialog').evaluate(e=>e.open))await page.getByRole('button',{name:'关闭互动',exact:true}).click();};
   async function open(code,id){
-    const context=await browser.newContext({viewport:id%2?{width:390,height:844}:{width:1280,height:800}});
+    const context=await browser.newContext({viewport:id%2?{width:390,height:844}:{width:1280,height:800},hasTouch:!!(id%2)});
     await context.addInitScript(id=>{localStorage.setItem('river_audio',JSON.stringify({music:false,sfx:false}));localStorage.setItem('starstone_name',`体验玩家${id}`);},id);
     const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
     await page.goto(base+(code?'#room='+code:''));await page.getByLabel('访问密码').fill(password);await page.getByRole('button',{name:'验证并进入'}).click();
@@ -55,7 +55,9 @@ const E=require('../public/poker-engine');
     const game=f.room.game,actor=game.players[game.currentPlayerIndex],page=f.pages[actor.id],revision=game.revision;
     await idle(page);await page.waitForFunction(rev=>(isHost?g:clientGameState)?.revision===rev&&!!document.querySelector('#actionPanel button'),revision);
     const action=kind||(await page.locator('.action-check').count()?'check':'call');
-    await page.locator('.action-'+action).click();await f.host.waitForFunction(rev=>g.revision>rev,revision);await idle(page);roomManager.check(f.room);
+    await page.locator('.action-'+action).click();
+    if(action==='fold')await page.locator('#foldConfirm').click();
+    await f.host.waitForFunction(rev=>g.revision>rev,revision);await idle(page);roomManager.check(f.room);
     return actor.id;
   }
   async function finish(f){
@@ -80,6 +82,30 @@ const E=require('../public/poker-engine');
   }
   async function setAvatar(page,avatar){await page.locator('#avatarBtn').click();await page.locator(`#avatarDialog button[data-avatar="${avatar}"]`).click();await idle(page);if(await page.locator('#avatarDialog').evaluate(e=>e.open))await page.keyboard.press('Escape');}
   try{
+    const headsUp=await table(2);await start(headsUp);
+    await step(headsUp,'call');
+    const blindGame=headsUp.room.game,blind=blindGame.players[blindGame.currentPlayerIndex],phone=headsUp.pages[blind.id];
+    assert.equal(blindGame.positions[blind.id].label,'BB');
+    await phone.setViewportSize({width:320,height:568});
+    await phone.locator('.action-check').waitFor();
+    assert.deepEqual(await phone.locator('.betting-actions button').evaluateAll(buttons=>buttons.map(button=>getComputedStyle(button).gridColumnStart)),['1','2','3','4']);
+    const revision=blindGame.revision;
+    await phone.locator('.action-fold').tap();
+    await phone.locator('#foldDialog[open]').waitFor();
+    assert.equal(await phone.locator('#foldCancel').evaluate(button=>document.activeElement===button),true);
+    assert.equal(blind.folded,false,'One touch on the fold control must never fold the BB');
+    assert.equal(blindGame.revision,revision);
+    await phone.locator('#foldCancel').tap();
+    await phone.locator('.action-check').tap();
+    await headsUp.host.waitForFunction(()=>g.phase==='flop');
+    assert.equal(blind.folded,false);
+    await phone.locator('.action-fold').tap();
+    headsUp.room.deadline=Date.now()-1;
+    roomManager.tick();
+    await phone.locator('#foldDialog').waitFor({state:'hidden'});
+    assert.equal(blind.folded,false,'An expired free-check turn cannot be folded by a stale confirmation');
+    checks.push('mobile BB checks with one tap, and touching Fold once does not submit or change table state');
+    for(const page of headsUp.pages)await page.context().close();
     const f=await table(4);await setAvatar(f.pages[1],'fox');await setAvatar(f.pages[2],'panda');await start(f);
     for(const page of f.pages){await page.locator('.player-card[data-seat="1"] .player-avatar[data-avatar="fox"]').waitFor();await page.locator('.player-card[data-seat="2"] .player-avatar[data-avatar="panda"]').waitFor();}
     await f.pages[1].reload();await f.pages[1].waitForFunction(()=>wsConnected&&mySeatId===1);await f.pages[1].locator('.player-card[data-seat="1"] .player-avatar[data-avatar="fox"]').waitFor();
@@ -151,6 +177,6 @@ const E=require('../public/poker-engine');
     await finish(full);checks.push('eight independent clients preserve clockwise action through every street; key controls fit four phone/desktop viewports');
     assert.deepEqual(errors,[]);
     await fs.writeFile(path.join(__dirname,'experience-browser-report.json'),JSON.stringify({testedAt:new Date().toISOString(),checks,hands,result:'passed',limits:'Local Chrome independent contexts and mobile-sized viewports; physical phones and public network not tested'},null,2));
-    console.log(`Experience regressions passed: ${checks.length} checks, ${hands.length} complete hands, 4- and 8-client tables.`);
+    console.log(`Experience regressions passed: ${checks.length} checks, ${hands.length} complete hands, 2-, 4- and 8-client tables.`);
   }finally{await browser.close();for(const ws of wss.clients)ws.terminate();await new Promise(resolve=>wss.close(resolve));await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

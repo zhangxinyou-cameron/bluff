@@ -37,7 +37,7 @@ const E=require('../public/poker-engine');
         assert.ok(++steps<20);const game=room.game,p=game.players[game.currentPlayerIndex],rev=game.revision,page=pages[p.id];
         await page.waitForFunction(rev=>(isHost?g:clientGameState)?.revision===rev&&!!document.querySelector('#actionPanel button'),rev);
         const action=p.id!==winner?'fold':p.currentBet<game.currentBet?'call':'check';
-        await page.locator('.action-'+action).click();await idle(page);await host.waitForFunction(rev=>g.revision>rev,rev);
+        await page.locator('.action-'+action).click();if(action==='fold')await page.locator('#foldConfirm').click();await idle(page);await host.waitForFunction(rev=>g.revision>rev,rev);
       }
       for(const page of pages)await page.locator('#resultScreen').waitFor({state:'visible'});
       assert.equal(room.game.showdownOccurred,false);assert.deepEqual(room.game.winners,[winner]);await visibility(pages,winner,false);

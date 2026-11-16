@@ -143,7 +143,7 @@
     if(target.matches('#bankBorrowBtn, #bankRepayBtn')) return 'chips';
     if (target.matches('#startBtn, #nextHandBtn, .action-next')) return 'deal';
     if (target.matches('#readyBtn, #confirmJoinBtn, .action-confirm')) return 'ready';
-    if (target.matches('.action-fold, .action-cancel')) return 'fold';
+    if (target.matches('#foldConfirm, .action-cancel')) return 'fold';
     if (target.matches('#leaveBtn')) return 'leave';
     if (target.matches('.action-raise, .action-call, .action-allin')) return 'chips';
     return 'tap';

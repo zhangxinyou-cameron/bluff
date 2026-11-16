@@ -38,7 +38,7 @@ const E=require('../public/poker-engine');
         assert.ok(++actions<50);const game=room.game,phase=game.phase,actor=game.players[game.currentPlayerIndex],page=pages[actor.id],rev=game.revision;
         await page.waitForFunction(rev=>(isHost?g:clientGameState)?.revision===rev&&!!document.querySelector('#actionPanel button'),rev);
         const action=hand===2&&phase==='pre_flop'&&!game.players.some(p=>p.folded)?'fold':actor.currentBet<game.currentBet?'call':'check';
-        await page.locator('.action-'+action).click();await idle(page);await host.waitForFunction(rev=>g.revision>rev,rev);
+        await page.locator('.action-'+action).click();if(action==='fold')await page.locator('#foldConfirm').click();await idle(page);await host.waitForFunction(rev=>g.revision>rev,rev);
         if(game.phase!==phase&&E.betting(game)){
           transitions++;await clearRound(pages,room);
           if(!refreshed){await pages[1].reload();await pages[1].waitForFunction(()=>wsConnected&&clientGameState?.phase==='flop');await clearRound(pages,room);refreshed=true;}

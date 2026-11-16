@@ -10,7 +10,7 @@
   const readRegistry=()=>{try{return JSON.parse(localStorage.getItem(registryKey)||'{}');}catch(_){return{};}};
   const clientId=(()=>{try{let id=localStorage.getItem('river_client_id');if(!id){id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);localStorage.setItem('river_client_id',id);}return id;}catch(_){return '';}})();
   let rendering=false,renderErrors=0,betNoticeTimer=null;
-  let lastBankPrompt=null,autoBankHand=null;
+  let lastBankPrompt=null,autoBankHand=null,foldTarget=null;
   let warningUntil=0;
   const now=()=>Date.now()+clockOffset;
   // Keep the result screen locked until a server snapshot carries the settled runout.
@@ -110,10 +110,29 @@
     const dialog=node('bankDialog');
     if(dialog.open)dialog.close();
   }
+  function canConfirmFold(target){
+    const state=lastSnapshot?.game;
+    return !!target&&!stopped&&wsConnected&&!pending&&!lastSnapshot?.paused&&PokerEngine.betting(state||{})&&
+      presentationRemaining(lastSnapshot)===0&&now()<lastSnapshot.turnDeadline&&
+      state.handNumber===target.handNumber&&state.revision===target.revision&&
+      mySeatId===target.seatId&&state.players[state.currentPlayerIndex]?.id===target.seatId;
+  }
+  function closeFold(){
+    foldTarget=null;
+    const dialog=node('foldDialog');
+    if(dialog.open)dialog.close();
+  }
+  function confirmFold(){
+    const target=foldTarget;
+    const allowed=canConfirmFold(target);
+    closeFold();
+    if(allowed)command('action',{action:'fold',handNumber:target.handNumber,revision:target.revision});
+  }
   function draw(force=false){
     if(stopped)return;
     const data=lastSnapshot;if(!data)return;
     const state=data.game,remaining=presentationRemaining(data);
+    if(foldTarget&&!canConfirmFold(foldTarget))closeFold();
     const progress=data.presentation?Math.max(0,Math.min(1,(now()-data.presentation.startedAt)/Math.max(1,data.presentation.duration))):1;
     const key=`${data.version}-${wsConnected}-${!!pending}-${remaining>0}-${Math.floor(progress*8)}`;
     if(!force&&paintKey===key){updateClock();return;}paintKey=key;
@@ -235,7 +254,7 @@
       }
       if(data.type==='error'||data.type==='roomClosed'||data.type==='kicked'){
         stopped=true;intentional=true;wsConnected=false;clearTimeout(reconnectTimer);window.RiverTable?.stop();
-        closeBank();
+        closeBank();closeFold();
         const code=entry?.roomCode||roomCode;
         if(data.fatal||data.type==='roomClosed'||data.type==='kicked'){
           try{const registry=readRegistry();delete registry[code];if(data.type==='kicked'&&data.rejoinToken)registry[code]={roomCode:code,isHost:false,rejoinToken:data.rejoinToken,updatedAt:Date.now()};localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}
@@ -268,8 +287,8 @@
     socket.onclose=event=>{
       if(ws!==socket)return;wsConnected=false;
       if(intentional||stopped)return;
-      if(event.code===4001){stopped=true;status('该席位已在另一页面恢复，请关闭本页','error');return;}
-      if(event.code===4004){stopped=true;status('登录已过期，请重新登录后恢复席位','expired');return;}
+      if(event.code===4001){stopped=true;closeFold();status('该席位已在另一页面恢复，请关闭本页','error');return;}
+      if(event.code===4004){stopped=true;closeFold();status('登录已过期，请重新登录后恢复席位','expired');return;}
       status('连接中断，席位已保留，正在自动重连…');paint(true);
       reconnectTimer=setTimeout(connect,Math.min(8000,600*2**Math.min(retry++,4)));
       if(retry===3&&typeof fetch==='function')fetch('/api/session').then(result=>{if(result.status===401){stopped=true;status('登录已过期，请重新登录后恢复席位','expired');}}).catch(()=>{});
@@ -286,7 +305,7 @@
     }
     intentional=true;if(ws){ws.onclose=null;ws.close();}
     g=null;clientGameState=null;lastSnapshot=null;lastVersion=-1;events.length=0;seen.clear();eventId=0;pending=null;sequence=0;stopped=false;retry=0;
-    lastBankPrompt=null;closeBank();
+    lastBankPrompt=null;closeBank();closeFold();
     const saved=safeRead(),known=readRegistry()[code];
     const resume=saved?.roomCode===code?saved:known;
     entry=freshJoin||!resume?{roomCode:code,isHost:host}:resume;sequence=entry.commandSeq||0;
@@ -294,13 +313,24 @@
     node('leagueWaitHeader').hidden=node('leagueReadyState').hidden=true;
     roomCode=code;isHost=host;mySeatId=host?0:-1;seats=[];wsConnected=false;showWaitScreen();setConnectionStatus('正在连接房间…');lastReceived=0;connect();
   }
-  function leave({reload=true,permanent=false}={}){intentional=true;stopped=true;save();raw({type:'leaveRoom',permanent});clearTimeout(reconnectTimer);if(permanent&&entry){try{const registry=readRegistry();delete registry[entry.roomCode];localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}}entry=null;save();window.RiverTable?.stop();closeBank();ws?.close();if(reload)location.href=location.pathname;}
+  function leave({reload=true,permanent=false}={}){intentional=true;stopped=true;save();raw({type:'leaveRoom',permanent});clearTimeout(reconnectTimer);if(permanent&&entry){try{const registry=readRegistry();delete registry[entry.roomCode];localStorage.setItem(registryKey,JSON.stringify(registry));}catch(_){}}entry=null;save();window.RiverTable?.stop();closeBank();closeFold();ws?.close();if(reload)location.href=location.pathname;}
   createRoom=()=>begin(String(Math.floor(100000+Math.random()*900000)),true);
   joinRoom=()=>{const code=node('roomCodeInput').value.trim();if(!/^\d{6}$/.test(code)){alert('请输入6位数字房间号');return;}begin(code,false,!!identity?.profile);};
   connectWS=()=>{if(!entry)entry={roomCode:roomCode||'100000',isHost};lastReceived=0;connect();};
   startGameHost=()=>command('startGame');
   scheduleAI=()=>{};syncAfterAction=()=>{};broadcast=()=>{};broadcastSeatsAll=()=>{};sendToPlayer=()=>{};
-  playerAction=action=>{const state=lastSnapshot?.game;if(state)command('action',{action,handNumber:state.handNumber,revision:state.revision});};
+  playerAction=action=>{
+    const state=lastSnapshot?.game;
+    if(!state)return;
+    const {handNumber,revision}=state;
+    if(action!=='fold')return command('action',{action,handNumber,revision});
+    const target={handNumber,revision,seatId:mySeatId};
+    if(!canConfirmFold(target)||node('foldDialog').open)return;
+    foldTarget=target;
+    const player=state.players[state.currentPlayerIndex];
+    node('foldHint').textContent=state.currentBet===player.currentBet?'当前可以免费过牌。确认弃牌将退出本手。':'确认后将退出本手，不再争夺底池。';
+    node('foldDialog').showModal();
+  };
   confirmRaise=()=>{raiseMode=false;const state=lastSnapshot?.game;if(state)command('raise',{amount:raiseValue,handNumber:state.handNumber,revision:state.revision});};
   nextHand=()=>{const state=lastSnapshot?.game;if(state)command('handReady',{handNumber:state.handNumber});};
   toggleShowFolded=()=>{if(lastSnapshot?.game)command('showFolded',{handNumber:lastSnapshot.game.handNumber});};
@@ -314,6 +344,8 @@
   sendQuickChat=index=>{const phrase=lastSnapshot?.packs?.phrases[index];if(phrase)command('phrase',{phraseId:phrase.id});};
   renderChat=renderHistory;backToHome=()=>leave();node('leaveBtn').onclick=()=>leave({permanent:true});
   node('readyBtn').onclick=()=>command('ready',{rulesRevision:waitingRoom?.rulesRevision});
+  node('foldCancel').onclick=closeFold;
+  node('foldConfirm').onclick=confirmFold;
   node('historyFilter').onchange=renderHistory;
   node('loadEarlierBtn').onclick=()=>{historyLimit+=100;renderHistory();};
   node('exportHistoryBtn').onclick=()=>{
@@ -323,6 +355,7 @@
   node('reconnectBtn').onclick=()=>{if(stopped){const saved=readRegistry()[roomCode];if(saved?.rejoinToken){begin(roomCode,false);return;}location.reload();return;}lastReceived=0;recover('正在手动同步最新状态…');};
   document.addEventListener('close',event=>{
     if(event.target===node('bankDialog')&&!event.target.open)autoBankHand=null;
+    if(event.target===node('foldDialog')&&!event.target.open)foldTarget=null;
     if(event.target.tagName==='DIALOG')paint(true);
   },true);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&entry){lastReceived=0;recover('已回到牌桌，正在核对状态…');}});
