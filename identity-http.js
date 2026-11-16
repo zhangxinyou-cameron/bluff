@@ -4,6 +4,7 @@ const { loginDestination } = require('./access');
 const { scores, title, operationEstimates } = require('./match-stats');
 const { FIRST_OPERATION_VERSION, operationRating, rankOperations } = require('./operation-rating');
 const { practicalTitle } = require('./rating-titles');
+const { playerImage } = require('./player-image');
 
 function json(res, data, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -94,15 +95,16 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
         return { uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values, estimates),
           title: title(row.values, ratingVersion, estimates) };
       })).map(row => [row.uid, row])) : new Map();
-      json(res, { ...summary, ratingVersion, players: players.map(({ metrics, ...row }) => {
+      json(res, { ...summary, ratingVersion, players: players.map(({ metrics, imageStats, ...row }) => {
+        const image = playerImage(imageStats);
         if (ratingVersion >= FIRST_OPERATION_VERSION) {
           const { operationRating, operationPlace, title: styleTitle } = operations.get(row.uid);
-          return { ...row, title: styleTitle, operationRating, operationPlace };
+          return { ...row, title: styleTitle, operationRating, operationPlace, image };
         }
         const values = ratingVersion === 1 ? scores(metrics, row.hands, ratingVersion) :
           Object.fromEntries(Object.entries(row.values).map(([key, value]) =>
             [key, { ...value, score: value.score === null ? null : Math.round(value.score) }]));
-        return { ...row, values, title: row.title ?? practicalTitle(values) };
+        return { ...row, values, title: row.title ?? practicalTitle(values), image };
       }) });
     } else {
       const reports = [...stats.matches.values()].filter(report => report.status === 'completed' && report.players.some(row => row.uid === uid))

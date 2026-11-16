@@ -250,7 +250,16 @@
 
   function dimensionsCard(player) {
     return panel(personName(player), muted(`${player.title || '称号待定'} · ${player.hands} 手${player.ratingVersion < 4 ? ' · 历史评分' : ''}`),
-      radar(player.values), dimensionList(player.values));
+      Object.hasOwn(player, 'image') ? playerImageCard(player.image) : null, radar(player.values), dimensionList(player.values));
+  }
+
+  function playerImageCard(image) {
+    const percent = value => value == null ? '—' : `${Number((100 * value).toFixed(1))}%`;
+    const label = image ? (image.name ?? `样本不足（${image.preflopHands}/10 手）`) : '历史赛报未记录';
+    return el('section', { className: 'club-player-image', 'aria-label': '本场玩家形象' },
+      row(el('strong', {}, '本场玩家形象'), badge(label, !!image?.name)),
+      image ? el('dl', {}, [['主动入池率', image.vpip], ['翻前加注率', image.pfr], ['翻后进攻率', image.postflopAggression], ['翻后跟注率', image.callRate]]
+        .map(([name, value]) => el('div', {}, el('dt', {}, name), el('dd', {}, percent(value))))) : null);
   }
 
   function teamFlag(flag, eager = false) {
@@ -475,7 +484,11 @@
       report.leagueCode && identity.leagues ? buttonLink('返回所属联赛', leagueUrl(report.leagueCode), true) : null,
       panel('赛果', net), report.ratingVersion >= 4 ? operationBoard([...report.players].sort((a, b) =>
         (a.operationPlace ?? Infinity) - (b.operationPlace ?? Infinity))) : null,
-      ratingHelp(report.ratingVersion), grid(report.players.map(dimensionsCard)));
+      ratingHelp(report.ratingVersion), report.players.some(player => player.image) ?
+        el('details', { className: 'club-details' }, el('summary', {}, '玩家形象怎么算？'),
+          muted('至少有 10 手手动翻前操作才定型。入池率按翻前自愿投入计算，牌桌人数越少，判定「紧」的入池率上限越高。盲注、底注、免费过牌和超时操作不算主动入池。'),
+          muted('翻后进攻率看下注和加注占付费行动的比例，翻后跟注率看面对下注时的跟注比例。岩石很少入池或入池偏紧且少主动进攻。紧凶入池有选择但常进攻，松凶入池宽也常进攻。松弱经常入池但较少进攻，其中翻后多次面对下注且经常跟注者记为跟注站。')) : null,
+      grid(report.players.map(dimensionsCard)));
   }
 
   async function showProfile() {

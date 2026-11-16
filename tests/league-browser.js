@@ -221,6 +221,9 @@ async function main() {
     for (let index = 0; index < 3; index++) await takeAction([host,...firstGuests], 'fold');
     await host.waitForFunction(() => g.phase === 'hand_over');
     assert.equal(await finish(), first.matchId);
+    const firstReport = await api(host, '/api/reports?id=' + first.matchId);
+    assert.deepEqual(firstReport.players.map(player => player.image.preflopHands).sort(), [0, 1, 1, 1]);
+    assert.ok(firstReport.players.every(player => player.image.name === null && (player.image.vpip ?? 0) === 0));
     league = await detail(host, code);
     assert.equal(league.format, 'points:2');
     assert.equal(league.players.some(player => player.uid === uids[3]), false);
@@ -321,12 +324,13 @@ async function main() {
     const archivedId = '4f178643-48ba-4c79-aad0-48347dc61e6f';
     const saved = services.stats.matches.get(second.id);
     services.stats.save({ ...saved, id: archivedId, leagueCode: null, ratingVersion: undefined,
-      players: saved.players.map(player => ({ ...player, hands: 10, title: '稳健派',
+      players: saved.players.map(player => ({ ...player, hands: 10, title: '稳健派', imageStats: undefined,
         metrics: { ...player.metrics, stability: { total: 4, samples: 5 } } })) });
     const historical = await api(host, '/api/reports?id=' + archivedId);
     assert.equal(historical.ratingVersion, 1);
     assert.deepEqual(historical.players[0].values.stability, { score: 4, samples: 5, observed: 4 });
     assert.equal(historical.players[0].title, '稳健派');
+    assert.equal(historical.players[0].image, null);
     services.stats.deleteMatches([archivedId]);
     const titleFixtureId = '11a355b1-81bc-4735-89bb-141480f63899';
     const exemplar = saved.players.find(player => player.uid === uids[0]);
@@ -337,19 +341,27 @@ async function main() {
     for (const dimension of ['luck', 'calculation', 'stability', 'strategy']) partialMetrics[dimension] = { total: 5, samples: 10 };
     const partialPlayer = saved.players.find(player => player.uid === uids[1]);
     services.stats.save({ ...saved, id: titleFixtureId, leagueCode: null, name: '组合称号赛报', hands: 24,
-      players: [{ ...exemplar, hands: 24, title: '精算牌手', metrics: titleMetrics, values },
-        { ...partialPlayer, hands: 10, title: null, metrics: partialMetrics, values: scores(partialMetrics, 10) }] });
+      players: [{ ...exemplar, hands: 24, title: '精算牌手', metrics: titleMetrics, values,
+        imageStats: { preflopHands: 20, voluntaryHands: 10, raisedHands: 1, entryThresholdTotal: 460,
+          postflopRaises: 1, postflopCalls: 7, postflopFaced: 9 } },
+        { ...partialPlayer, hands: 10, title: null, metrics: partialMetrics, values: scores(partialMetrics, 10), imageStats: undefined }] });
     const titleReport = await api(host, '/api/reports?id=' + titleFixtureId);
     assert.equal(titleReport.players[0].title, '算准敢押');
     assert.deepEqual(titleReport.players[0].values, values);
     assert.deepEqual(titleReport.players[0].operationRating, { score: 10, base: 10, bonus: 0, dimensions: 5 });
     assert.ok(titleReport.players[1].operationRating);
     assert.equal(titleReport.players[1].title, '借势试探');
+    assert.equal(titleReport.players[0].image.name, '跟注站');
+    assert.equal(titleReport.players[0].image.vpip, .5);
+    assert.equal('imageStats' in titleReport.players[0], false);
     const reportPage = await host.context().newPage();
     try {
       await reportPage.goto(base + '/club.html?report=' + titleFixtureId);
       await reportPage.getByText('算准敢押 · 24 手', { exact: true }).waitFor();
       await reportPage.getByText('借势试探 · 10 手', { exact: true }).waitFor();
+      await reportPage.getByText('跟注站', { exact: true }).waitFor();
+      await reportPage.getByText('历史赛报未记录', { exact: true }).waitFor();
+      await reportPage.locator('.club-player-image').getByText('50%', { exact: true }).waitFor();
       await reportPage.getByRole('heading', { name: '本场操作评分' }).waitFor();
       await reportPage.getByText('10.0 分', { exact: true }).waitFor();
     } finally {

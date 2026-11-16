@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const E = require('./public/poker-engine');
 const { clamp, dealtLuck, decisionSnapshot, evaluateDecision } = require('./rating-model');
 const { combinationTitle, practicalTitle } = require('./rating-titles');
+const { newImageStats, recordImageAction } = require('./player-image');
 const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
@@ -110,10 +111,10 @@ class MatchStats {
       const person = room.people.get(seat);
       if (!person?.uid || room.statistics.players.has(seat)) continue;
       room.statistics.players.set(seat, { uid: person.uid, name: person.name, avatar: person.avatar,
-        teamId: teamForUid(person.uid) ?? null, hands: 0, knockouts: 0, metrics: empty() });
+        teamId: teamForUid(person.uid) ?? null, hands: 0, knockouts: 0, metrics: empty(), imageStats: newImageStats() });
     }
     room.statistics.hand = {
-      number: g.handNumber, participating, observations: new Map(), pressure: null, valueBet: null, valueBets: []
+      number: g.handNumber, participating, imageActions: new Map(), observations: new Map(), pressure: null, valueBet: null, valueBets: []
     };
   }
 
@@ -129,6 +130,11 @@ class MatchStats {
     const stats = room.statistics, hand = stats?.hand;
     if (!hand) return;
     const { action, amount: paid, raised, street } = event;
+    const imageStats = stats.players.get(seat)?.imageStats;
+    if (imageStats && hand.participating.has(seat) && !event.automatic) {
+      if (!hand.imageActions.has(seat)) hand.imageActions.set(seat, {});
+      recordImageAction(imageStats, hand.imageActions.get(seat), event, hand.participating.size);
+    }
     const valueBet = hand.valueBet;
     if (valueBet?.street === street && valueBet.seat !== seat && valueBet.pending.has(seat)) {
       const baseline = valueBet.pending.get(seat);

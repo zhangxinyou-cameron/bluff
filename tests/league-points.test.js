@@ -263,7 +263,7 @@ test('decision model separates calculated restraint, low-equity courage and stro
   const decision = { view, seed: 123, minimum: 160 };
   function observe(action, amount, raised, snapshot = decision, priorLoss = false) {
     const hand = { observations: new Map(), valueBets: [] };
-    const room = { statistics: { hand, lastLoss: new Map([[0, priorLoss]]) } };
+    const room = { statistics: { hand, players: new Map(), lastLoss: new Map([[0, priorLoss]]) } };
     stats.action(room, 0, snapshot, { action, amount, raised, street: 'river' });
     return hand.observations.get(0);
   }

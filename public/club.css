@@ -120,6 +120,11 @@ small, .club-muted { color: var(--muted); }
 .club-dimensions { display: grid; grid-template-columns: repeat(2, 1fr); gap: .55rem; }
 .club-dimensions div { display: grid; gap: .14rem; }
 .club-dimensions strong { color: var(--gold); }
+.club-player-image { margin: .75rem 0; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: .55rem; }
+.club-player-image .club-row { gap: .3rem .6rem; font-size: .85rem; }
+.club-player-image dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(4.65rem, 1fr)); gap: .5rem .3rem; margin: .55rem 0 0; }
+.club-player-image dt { color: var(--muted); font-size: .72rem; }
+.club-player-image dd { margin: .15rem 0 0; font-variant-numeric: tabular-nums; }
 .club-league-heading { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: .9rem clamp(1rem, 3vw, 1.5rem); gap: .45rem; }
 .club-league-heading h1 { grid-area: 1 / 1; }
 .club-league-heading > .club-badge { grid-area: 1 / 2; justify-self: end; }
