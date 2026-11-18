@@ -83,11 +83,24 @@ const E=require('../public/poker-engine');
   async function setAvatar(page,avatar){await page.locator('#avatarBtn').click();await page.locator(`#avatarDialog button[data-avatar="${avatar}"]`).click();await idle(page);if(await page.locator('#avatarDialog').evaluate(e=>e.open))await page.keyboard.press('Escape');}
   try{
     const headsUp=await table(2);await start(headsUp);
+    await headsUp.pages[1].setViewportSize({width:320,height:568});
+    await headsUp.host.locator('.action-call').waitFor();
+    roomManager.configureTimings({action:350});
+    const responseStart=Date.now();
     await step(headsUp,'call');
     const blindGame=headsUp.room.game,blind=blindGame.players[blindGame.currentPlayerIndex],phone=headsUp.pages[blind.id];
     assert.equal(blindGame.positions[blind.id].label,'BB');
-    await phone.setViewportSize({width:320,height:568});
     await phone.locator('.action-check').waitFor();
+    console.log(`Local call-to-BB-controls: ${Date.now()-responseStart} ms (350 ms action pacing)`);
+    roomManager.configureTimings({action:30});
+    await phone.evaluate(()=>{
+      window.historyMutations=0;
+      const observer=new MutationObserver(records=>{window.historyMutations+=records.length;});
+      observer.observe(document.getElementById('chatBox'),{childList:true,subtree:true});
+      RiverSession.sync();
+    });
+    await phone.waitForTimeout(250);
+    assert.equal(await phone.evaluate(()=>window.historyMutations),0,'Unchanged syncs should preserve the history DOM');
     assert.deepEqual(await phone.locator('.betting-actions button').evaluateAll(buttons=>buttons.map(button=>getComputedStyle(button).gridColumnStart)),['1','2','3','4']);
     const revision=blindGame.revision;
     await phone.locator('.action-fold').tap();

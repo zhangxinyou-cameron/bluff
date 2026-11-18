@@ -5,6 +5,9 @@ const weights = { calculation: 35, stability: 30, strategy: 15, attack: 15, cour
 // are the observed extremes, and the middle percentiles center the scale at 8.
 const calibration = [[36.24, 0], [37.33, 6.2], [39.87, 7], [46.60, 7.3], [51.70, 8],
   [58.85, 8.7], [60, 8.8], [63.31, 9], [67.08, 9.7], [69.20, 10]];
+// Broader value-betting opportunities have a different observed distribution.
+const expandedAttackCalibration = [[35.37, 0], [36.16, 6.2], [38.41, 7], [45.14, 7.3],
+  [50.10, 8], [57.03, 8.7], [61.75, 9], [66.30, 9.7], [67.66, 10]];
 const roundTenth = score => Math.round(score * 10) / 10;
 
 function operationIndex(estimates) {
@@ -15,20 +18,21 @@ function operationIndex(estimates) {
   return { raw: 20 * total / weight, dimensions: available.length };
 }
 
-function normalize(raw) {
-  const upper = calibration.findIndex(([index]) => index >= raw);
+function normalize(raw, version) {
+  const curve = version >= 5 ? expandedAttackCalibration : calibration;
+  const upper = curve.findIndex(([index]) => index >= raw);
   if (upper === 0) return 0;
   if (upper === -1) return 10;
-  const [lowerIndex, lowerScore] = calibration[upper - 1];
-  const [upperIndex, upperScore] = calibration[upper];
+  const [lowerIndex, lowerScore] = curve[upper - 1];
+  const [upperIndex, upperScore] = curve[upper];
   const fraction = (raw - lowerIndex) / (upperIndex - lowerIndex);
   return roundTenth(lowerScore + fraction * (upperScore - lowerScore));
 }
 
-function operationRating(values, estimates) {
+function operationRating(values, estimates, version = FIRST_OPERATION_VERSION) {
   const index = operationIndex(estimates);
   if (!index) return null;
-  const base = normalize(index.raw);
+  const base = normalize(index.raw, version);
   const luck = values.luck?.score;
   const performedUnderPressure = values.stability.score >= 4 || values.strategy?.score >= 4;
   const boost = base >= 8.8 && performedUnderPressure ? ({ 1: .6, 2: .3 })[luck] ?? 0 : 0;

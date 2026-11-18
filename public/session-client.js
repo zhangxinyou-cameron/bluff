@@ -11,7 +11,7 @@
   const clientId=(()=>{try{let id=localStorage.getItem('river_client_id');if(!id){id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);localStorage.setItem('river_client_id',id);}return id;}catch(_){return '';}})();
   let rendering=false,renderErrors=0,betNoticeTimer=null;
   let lastBankPrompt=null,autoBankHand=null,foldTarget=null;
-  let warningUntil=0;
+  let warningUntil=0,historyPaintKey='';
   const now=()=>Date.now()+clockOffset;
   // Keep the result screen locked until a server snapshot carries the settled runout.
   const presentationRemaining=data=>Math.max(data.presentation?.timeline?1:0,(data.interactiveAt||0)-now());
@@ -40,6 +40,9 @@
   function renderHistory(){
     const box=node('chatBox'),filter=node('historyFilter').value||'all';
     const presenting=lastSnapshot?.presentation&&presentationRemaining(lastSnapshot)>0;
+    const key=`${roomCode}-${events.length}-${eventId}-${filter}-${historyLimit}-${presenting?lastSnapshot.game?.handNumber:'shown'}`;
+    if(key===historyPaintKey)return;
+    historyPaintKey=key;
     const filtered=events.filter(event=>!(presenting&&event.hand===lastSnapshot.game?.handNumber&&!event.runout&&['street','payout','result'].includes(event.kind))&&(filter==='all'||(filter==='chat'?['chat','phrase'].includes(event.kind):!['chat','phrase'].includes(event.kind))));
     const nearBottom=(box.scrollHeight||0)-(box.scrollTop||0)-(box.clientHeight||0)<70;
     box.innerHTML=filtered.slice(-historyLimit).map(event=>{
@@ -371,7 +374,7 @@
       if(pending&&Date.now()-pending.at>6000){status('操作响应较慢，正在核对处理结果，避免重复执行');sync();}
     }else if(!reconnectTimer)connect();
   },1000);
-  renderTimer=setInterval(()=>{if(!document.hidden)paint();},180);
+  renderTimer=setInterval(()=>{if(!document.hidden)paint();},80);
   const previousLoad=window.onload;
   window.onload=null;
   document.addEventListener('DOMContentLoaded',async()=>{

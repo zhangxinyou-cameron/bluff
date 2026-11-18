@@ -135,16 +135,19 @@ function raiseModel(view, hero, opponents, equity, total) {
     }
     const contributors = live.map(choice => Math.min(cap, choice.base + choice.paid));
     const folded = [...dropped, ...dead];
+    const contributions = [...contributors, ...folded];
+    const continuing = live.some(choice => !choice.committed);
+    const minimumChance = Math.min(...live.map(choice => choice.chance));
     const matched = Math.min(cap, Math.max(hero.totalBet, ...contributors, ...folded));
     const limits = [...new Set([...contributors, matched].filter(level => level > 0 && level <= matched))].sort((a, b) => a - b);
     let previous = 0, payout = 0;
     for (const level of limits) {
       const eligible = contributors.filter(chips => chips >= level).length;
-      const layer = level - previous + [...contributors, ...folded]
+      const layer = level - previous + contributions
         .reduce((sum, chips) => sum + Math.max(0, Math.min(chips, level) - previous), 0);
       // Approximate equity against fewer callers and stronger continuing ranges.
       const share = eligible ? equity ** (eligible / opponents.length) : 1;
-      const narrowed = live.some(choice => !choice.committed) ? share - 0.48 * share * (1 - share) * (1 - Math.min(...live.map(choice => choice.chance))) : share;
+      const narrowed = continuing ? share - 0.48 * share * (1 - share) * (1 - minimumChance) : share;
       payout += layer * narrowed;
       previous = level;
     }

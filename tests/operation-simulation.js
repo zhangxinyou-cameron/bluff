@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const E = require('../public/poker-engine');
 const AI = require('../poker-ai');
-const { MatchStats, scores, operationEstimates, title } = require('../match-stats');
+const { MatchStats, scores, operationEstimates, title, RATING_VERSION } = require('../match-stats');
 const { operationIndex, operationRating } = require('../operation-rating');
 
 const rng = initial => {
@@ -81,6 +81,7 @@ function choose(view, tier, random) {
 }
 
 const rows = [];
+const actionTimes = [];
 const holdout = process.argv.includes('--holdout');
 for (const deckMode of ['standard', 'short']) for (let match = 0; match < 6; match++) {
   const shift = holdout ? 43117 : 0;
@@ -117,7 +118,9 @@ for (const deckMode of ['standard', 'short']) for (let match = 0; match < 6; mat
       if (game.phase === street) assert.equal(paid, committed);
       const event = { kind: 'action', seatId: player.id, hand: game.handNumber, street, action, amount: committed,
         raised: currentBet + committed > tableBet, facedBet: tableBet > currentBet };
+      const actionStarted = performance.now();
       stats.action(room, player.id, decision, event);
+      actionTimes.push(performance.now() - actionStarted);
       room.history.push(event);
     }
     assert.equal(game.phase, 'hand_over');
@@ -129,11 +132,12 @@ for (const deckMode of ['standard', 'short']) for (let match = 0; match < 6; mat
     const values = scores(data.metrics, data.hands);
     const estimates = operationEstimates(data.metrics, values);
     const { raw } = operationIndex(estimates);
-    const rating = operationRating(values, estimates);
+    const rating = operationRating(values, estimates, RATING_VERSION);
     assert.ok(rating, '80 hands should produce enough scoring samples');
     rows.push({ deckMode, match, tier: tiers[tierFor(player.id)], ...rating, luck: values.luck.score,
       bb: (player.chips - player.bankDebt - player.initialChips) / 20,
-      raw, title: title(values, undefined, estimates), tiers: Object.values(values).map(value => value.score), estimates });
+      raw, title: title(values, undefined, estimates), attackSamples: data.metrics.attack.samples,
+      tiers: Object.values(values).map(value => value.score), estimates });
   }
 }
 
@@ -153,15 +157,17 @@ const median = (ordered[ordered.length / 2 - 1] + ordered[ordered.length / 2]) /
 const summary = { mean: average(rows, 'score'), median, min: ordered[0], max: ordered.at(-1),
   expertAbove9: rows.filter(row => row.tier === tiers[3] && row.score > 9).length,
   bands: [0, 6, 7, 8, 9, 10].map((low, index, limits) => ordered.filter(score => score >= low && (index === 5 || score < limits[index + 1])).length) };
+console.log(summary);
+if (process.argv.includes('--raw')) console.log(JSON.stringify(rows));
+actionTimes.sort((a, b) => a - b);
+console.log({ attackSamples: average(rows, 'attackSamples'), actionP95Ms: actionTimes[Math.floor(actionTimes.length * .95)] });
 assert.ok(summary.mean >= 7.6 && summary.mean <= 8.4, 'Mixed table rating should center around 8');
 assert.ok(summary.expertAbove9 >= 6, 'At least half of the expert results should exceed 9.0');
 assert.ok(summary.bands[2] + summary.bands[3] > ordered.length / 2, 'Middle bands should contain the most scores');
 if (!holdout) assert.deepEqual([summary.min, summary.max], [0, 10], 'Calibration covers both endpoints');
-console.log(summary);
 const common = rows.filter(row => row.score >= 7 && row.score < 9);
 const titles = Object.groupBy(common, row => row.title);
 assert.ok(Object.keys(titles).length >= 8, 'The usual rating range should show multiple play styles');
 assert.ok(Object.values(titles).every(group => group.length <= common.length / 3), 'A single title should not dominate the usual rating range');
 console.log('Titles among 7.0–8.9 ratings:', Object.fromEntries(Object.entries(titles).map(([name, players]) => [name, players.length])));
 console.log('960 hands, 12 seeded matches with rotating seats, ' + (holdout ? 'holdout' : 'calibration'));
-if (process.argv.includes('--raw')) console.log(JSON.stringify(rows));

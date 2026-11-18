@@ -97,7 +97,7 @@ function aggregate(league, matches, netPoints = false) {
     const estimates = ratingVersion >= FIRST_OPERATION_VERSION ? operationEstimates(rating.metrics, values) : undefined;
     return { ...rest, average: row.points / row.matches, bb100: 100 * row.bb / row.hands, values, ratingVersion, title: title(titleValues, ratingVersion, estimates),
       operationMatches: ratingVersion >= FIRST_OPERATION_VERSION ? rating.matches : 0,
-      operationRating: estimates ? operationRating(values, estimates) : null };
+      operationRating: estimates ? operationRating(values, estimates, ratingVersion) : null };
   });
   const teams = [...teamRows.values()].map(({ contributions, ...row }) => {
     const eligible = [...contributions.values()].filter(player => player.matches >= league.minMatches).sort((a, b) => b.bb - a.bb);

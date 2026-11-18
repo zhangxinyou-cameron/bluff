@@ -92,7 +92,7 @@ async function identityHttp(req, res, access, accounts, stats, leagues, rooms, r
       const ratingVersion = report.ratingVersion ?? 1;
       const operations = ratingVersion >= FIRST_OPERATION_VERSION ? new Map(rankOperations(players.map(row => {
         const estimates = operationEstimates(row.metrics, row.values);
-        return { uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values, estimates),
+        return { uid: row.uid, operationMatches: 1, operationRating: operationRating(row.values, estimates, ratingVersion),
           title: title(row.values, ratingVersion, estimates) };
       })).map(row => [row.uid, row])) : new Map();
       json(res, { ...summary, ratingVersion, players: players.map(({ metrics, imageStats, ...row }) => {

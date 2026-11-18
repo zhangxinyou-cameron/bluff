@@ -284,6 +284,26 @@ test('decision model separates calculated restraint, low-equity courage and stro
   assert.equal(shove.strategy.samples, 1);
 });
 
+test('modest value opportunities count towards attack, while weak cards and locked pots do not', () => {
+  const stats = Object.create(MatchStats.prototype);
+  const view = { seatId: 0, phase: 'flop', variant: 'standard', actions: [], canRaise: true, bigBlind: 20,
+    hole: cards('5s 6c'), board: cards('As 9h 5c'), currentBet: 0, pot: 60,
+    players: [0, 1, 2].map(id => ({ id, isActive: true, chips: 500, currentBet: 0, totalBet: 20 })) };
+  const snapshot = { view, minimum: 20, seed: 123 };
+  const result = evaluateDecision(snapshot, 'check', 0, false);
+  assert.ok(result.equity < result.fair + .12, 'This useful value opportunity was excluded by the former threshold');
+  function attack(decision, action = 'check', amount = 0, raised = false) {
+    const hand = { observations: new Map(), valueBets: [] };
+    stats.action({ statistics: { hand, players: new Map(), lastLoss: new Map() } }, 0, decision,
+      { action, amount, raised, street: 'flop' });
+    return hand.observations.get(0)?.attack;
+  }
+  assert.equal(attack(snapshot).samples, 1);
+  assert.equal(attack({ ...snapshot, view: { ...view, hole: cards('Kd Qh') } }).samples, 0);
+  assert.equal(attack({ ...snapshot, view: { ...view, canRaise: false } }), undefined);
+  assert.ok(attack(snapshot, 'raise', result.best.size, true).total > attack(snapshot).total);
+});
+
 test('rare hands visibly lift the rating and five good folds cannot confer a steady title', () => {
   const metrics = empty();
   metrics.luck = { samples: 16, total: 8 };

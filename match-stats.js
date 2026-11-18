@@ -7,7 +7,7 @@ const { readRecords, writeRecord, deleteRecord } = require('./local-store');
 const path = require('node:path');
 
 const dimensions = ['luck', 'strategy', 'calculation', 'courage', 'attack', 'stability'];
-const RATING_VERSION = 4;
+const RATING_VERSION = 5;
 const tierThresholds = {
   luck: [0.37, 0.46, 0.55, 0.67],
   strategy: [0.33, 0.45, 0.56, 0.73],
@@ -174,7 +174,10 @@ class MatchStats {
         0.85 * missedCall - looseCall - (chasing ? 0.24 : 0));
       for (let i = 0; i < weight; i++) add(metrics, 'stability', stability);
     }
-    if (equity > Math.max(fair + 0.12, fair * 1.35) && valueTarget.extra >= decision.view.bigBlind * 0.5) {
+    const canBuildPot = decision.view.canRaise && result.opponents.some(player => player.chips > 0 && !player.allIn);
+    const valueOpportunity = equity > Math.max(fair + 0.04, fair * 1.10) &&
+      valueTarget.extra >= decision.view.bigBlind * 0.10;
+    if (canBuildPot && valueOpportunity) {
       const sizeFit = chosen ? Math.min(1, (valueTarget.size + scale * 0.20) / chosen.size) : 0;
       const excess = chosen ? Math.max(0, chosen.size - need - valueTarget.size * 1.5) / Math.max(scale, valueTarget.size) : 0;
       const captured = chosen ? clamp(chosen.extra / valueTarget.extra) * accuracy * sizeFit * Math.exp(-excess) : 0;

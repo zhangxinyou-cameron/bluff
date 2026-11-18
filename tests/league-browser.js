@@ -322,7 +322,7 @@ async function main() {
     assert.equal(await finish(memberHost), second.id);
     const result = await api(host, '/api/reports?id=' + second.id);
     assert.equal(result.rules.bigBlind, 50);
-    assert.equal(result.ratingVersion, 4);
+    assert.equal(result.ratingVersion, 5);
     const archivedId = '4f178643-48ba-4c79-aad0-48347dc61e6f';
     const saved = services.stats.matches.get(second.id);
     services.stats.save({ ...saved, id: archivedId, leagueCode: null, ratingVersion: undefined,
