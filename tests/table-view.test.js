@@ -78,7 +78,7 @@ test('seat amounts take precedence over English labels and betting levels in cur
   game.players[1].lastAction={action:'allin',hand:game.handNumber,phase:game.phase,label:'4-BET · 梭哈 ALL IN 至 1960'};
   v.render(game,0);const cards=v.elements.get('playersTop').innerHTML+v.elements.get('playersBottom').innerHTML;
   assert.match(cards,/<span class="player-action-name">加注至<\/span> <strong class="player-action-amount">180<\/strong>/);
-  assert.match(cards,/<span class="player-action-name">梭哈至<\/span> <strong class="player-action-amount">1960<\/strong>/);
+  assert.match(cards,/<span class="player-action-name">梭哈至<\/span> <strong class="player-action-amount">1,960<\/strong>/);
   assert.match(cards,/title="3-BET · 加注 RAISE 至 180"/);
 });
 

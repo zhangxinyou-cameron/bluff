@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0c1716">
-<title>德州扑克·Texas Hold'em</title>
+<meta name="theme-color" content="#101b17">
+<title>THE RIVER · 河岸牌室</title>
 <link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/table-layout.css">
 <link rel="stylesheet" href="/social.css">
+<link rel="stylesheet" href="/river-theme.css">
 <script src="/poker-engine.js" defer></script>
 <script src="/avatars.js" defer></script>
 <script src="/table-page.js" defer></script>
@@ -18,7 +19,7 @@
 </head>
 <body>
 <header class="site-header">
-  <div class="brand"><span class="brand-mark" aria-hidden="true">♠</span><div><span class="brand-name">THE RIVER</span><span class="brand-caption">PRIVATE POKER CLUB</span></div></div>
+  <div class="brand"><span class="brand-mark river-mark" aria-hidden="true">♠</span><div><span class="brand-name">THE RIVER</span><span class="brand-caption">河岸牌室</span></div></div>
   <div class="header-right">
     <span class="online-label"><span class="online-dot"></span>好友之间，好牌相见</span>
     <div class="sound-controls" aria-label="声音控制">
@@ -95,7 +96,7 @@
       <div class="eyebrow">GOOD COMPANY. SLOW JAZZ.</div>
       <h1 class="hero-title">落座。<br>好牌，<em>慢慢来。</em></h1>
       <p class="hero-description">叫上熟悉的朋友，留一点时间给牌桌。<br>一副牌，一段爵士，一个轻松的夜晚。</p>
-      <div class="hero-art" aria-hidden="true"><div class="display-card first" data-suit="♠">A<span>♠</span></div><div class="display-card second" data-suit="♥">A<span>♥</span></div><div class="art-chip">100</div><span class="art-caption">A LITTLE LUCK. A LOT OF GOOD TIMES.</span></div>
+      <div class="hero-art" aria-hidden="true"><div class="display-card first river-card-art"></div><div class="display-card second" data-suit="♥">A<span>♥</span></div><div class="art-chip river-chip-face"><b>100</b></div><span class="art-caption">A LITTLE LUCK. A LOT OF GOOD TIMES.</span></div>
     </section>
     <section class="home-panel" aria-label="创建或加入牌局">
     <div class="panel-kicker">YOUR SEAT IS WAITING</div>
@@ -193,12 +194,12 @@
       <span class="pot-text" id="potText"></span><button id="tableSocialBtn" class="sound-button" onclick="RiverTable.open()">互动 <span id="peekBadge"></span></button>
     </div>
     <div class="table">
-      <div id="rulesBadge" class="rules-badge"></div><div id="reactionLayer" class="reaction-layer" aria-hidden="true"></div>
+      <div id="rulesBadge" class="rules-badge"></div><div id="reactionLayer" class="reaction-layer" aria-hidden="true"></div><div id="chipFlightLayer" class="chip-flight-layer" aria-hidden="true"></div>
       <div id="dealingStage" class="dealing-stage" hidden aria-live="polite"></div>
       <div class="players-top" id="playersTop"></div>
       <div class="table-center">
         <div class="community-cards" id="communityCards"></div>
-        <div class="pot-display" id="potDisplay"></div>
+        <div class="pot-display" id="potDisplay"><span class="river-chip-stack" aria-hidden="true"><i></i><i></i><i></i></span><span>底池</span><strong id="potAmount"></strong></div>
         <div id="actionAnnouncement" class="action-announcement" role="status" aria-live="polite"><span id="betNotice" class="bet-notice" hidden></span><span id="actionAnnouncementText"></span></div>
       </div>
       <div class="players-bottom" id="playersBottom"></div>

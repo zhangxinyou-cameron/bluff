@@ -73,7 +73,19 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
         assert.ok(events.some(event=>event.kind==='payout'));
         assert.equal(events.filter(event=>event.kind==='result').length,1);
       }
-      if(hand===1){for(let id=0;id<2;id++){if(room.game.players[id].chips<2000){await pages[id].locator('#bankBtn').click();await pages[id].locator('#bankAmount').fill('2000');await pages[id].locator('#bankBorrowBtn').click();await idle(pages[id]);await pages[id].getByRole('button',{name:'关闭银行'}).click();}}for(const page of pages){await page.locator('#nextHandBtn').click();await idle(page);}await host.waitForFunction(()=>g.handNumber===2);}
+      if(hand===1){
+        for(let id=0;id<2;id++){
+          const chips=room.game.players[id].chips,page=pages[id];
+          if(chips>=2000)continue;
+          if(chips===0)await page.locator('#bankDialog').waitFor({state:'visible'});
+          else await page.locator('#bankBtn').click();
+          await page.locator('#bankAmount').fill('2000');
+          await page.locator('#bankBorrowBtn').click();await idle(page);
+          await page.getByRole('button',{name:'关闭银行'}).click();
+        }
+        for(const page of pages){await page.locator('#nextHandBtn').click();await idle(page);}
+        await host.waitForFunction(()=>g.handNumber===2);
+      }
     }
     assert.deepEqual(errors,[]);console.log('Runout passed: 2 clients, real single/double timelines, staged WebSocket history, export, refresh and final payouts.');
   }finally{await browser.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>server.close(r));}

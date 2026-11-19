@@ -7,10 +7,26 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
   async function open(code){const ctx=await browser.newContext({viewport:{width:390,height:844}});await ctx.addInitScript(()=>localStorage.setItem('river_audio',JSON.stringify({music:false,sfx:false})));const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base+(code?'#room='+code:''));await p.getByLabel('访问密码').fill(password);await p.getByRole('button',{name:'验证并进入'}).click();await p.waitForFunction(()=>!!window.RiverSession);if(code){await p.waitForFunction(()=>wsConnected&&mySeatId>0);await p.locator('#readyBtn').click();await idle(p);}else{await p.locator('#createBtn').click();await p.locator('#waitTip').filter({hasText:'房间已创建'}).waitFor();}return p;}
   try{
     const host=await open(),code=await host.locator('#displayRoomCode').textContent(),guest=await open(code),pages=[host,guest],room=roomManager.games.get(code);
+    for(const page of pages)await page.evaluate(()=>{
+      const layer=document.getElementById('chipFlightLayer');
+      window.shoveFlights=0;
+      new MutationObserver(records=>{window.shoveFlights+=records.reduce((count,record)=>count+record.addedNodes.length,0);}).observe(layer,{childList:true});
+    });
     await host.locator('#startBtn').click();await guest.locator('.action-allin').filter({hasText:'梭哈'}).waitFor();await guest.locator('.action-raise').click();assert.equal(await guest.locator('#raiseMaxBtn').textContent(),'梭哈');await guest.locator('.action-cancel').click();await guest.locator('.action-allin').click();await idle(guest);assert.match(room.history.find(e=>e.action==='allin').label,/梭哈/);
+    for(const page of pages){
+      await page.waitForFunction(()=>window.shoveFlights===1);
+      await page.locator('.chip-flight').waitFor({state:'detached'});
+      await page.evaluate(()=>RiverSession.sync());
+    }
+    await guest.emulateMedia({reducedMotion:'reduce'});
+    await host.locator('.action-call').click();
+    await host.waitForFunction(()=>window.shoveFlights===2);
+    await host.locator('.chip-flight').waitFor({state:'detached'});
+    assert.equal(await guest.evaluate(()=>window.shoveFlights),1);
+    assert.equal(room.history.find(event=>event.action==='call').shoved,true);
     const directory=path.join(__dirname,'screenshots');await fs.mkdir(directory,{recursive:true});
     for(const n of [3,8]){
-      const g=E.createGame(Array.from({length:n},(_,id)=>({id,name:'玩家'+id,chips:2000,isAI:id>1,connected:true})),20,{allowBuyIn:true,runTwiceEnabled:true,blindMode:'standard'});E.startHand(g);
+      const g=E.createGame(Array.from({length:n},(_,id)=>({id,name:'玩家'+id,chips:23456789,isAI:id>1,connected:true})),20,{allowBuyIn:true,runTwiceEnabled:true,blindMode:'standard'});E.startHand(g);
       g.players[n-1].folded=true;while(E.betting(g)){const p=g.players[g.currentPlayerIndex];E.applyAction(g,p.id,'allin');}assert.equal(g.phase,'runout_vote');E.resolveRunout(g,true);room.game=g;roomManager.pace(room,'runout',0,0);
       // Show both completed boards during the final hold, matching the reported screenshot.
       room.presentation.startedAt=Date.now()-room.presentation.timeline.steps.at(-1).at;room.blockedUntil=room.presentation.startedAt+room.presentation.duration;room.presentation.until=room.blockedUntil;roomManager.publish(room);
@@ -21,6 +37,6 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
         if(page===guest&&(width===390||width===1280))await page.screenshot({path:path.join(directory,`shove-clear-cards-${n}-${width}.png`)});
       }}roomManager.check(room);
     }
-    assert.deepEqual(errors,[]);console.log('Shove UI passed: 2 clients, 3/8-seat double-board fixtures, 6 viewports, no badge/action overlap, and consistent 梭哈 controls/history.');
+    assert.deepEqual(errors,[]);console.log('Shove UI passed: 2 clients, explicit shove and call for entire stack, resync, reduced motion, and 3/8-seat double boards at 6 widths.');
   }finally{await browser.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -315,7 +315,7 @@ class RoomManager {
     if(action==='call') displayAmount=paid;
     const amountLabel=displayAmount===null?'':`${action==='call'?' ':' 至 '}${displayAmount}`;
     const label=`${level?`${level}-BET · `:''}${ACTION[action]}${amountLabel}`;
-    const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),displayAmount,betLevel:level,raised:before.bet+paid>before.currentBet,facedBet:before.currentBet>before.bet,label,street:before.phase,automatic});
+    const event=this.event(room,'action',`${p.name} ${automatic?'超时自动 ':''}${label}`,{seatId,name:p.name,action,amount:Math.max(0,paid),displayAmount,betLevel:level,shoved:paid>0&&paid===before.chips,raised:before.bet+paid>before.currentBet,facedBet:before.currentBet>before.bet,label,street:before.phase,automatic});
     this.stats?.action(room,seatId,decision,event);
     // The closing action belongs in history, never in the new street's markers.
     if(g.phase===before.phase)p.lastAction={id:event.id,action,label,displayAmount,hand:g.handNumber,phase:before.phase,automatic};

@@ -4,6 +4,8 @@
 
 代码同步维护于 [Gitee](https://gitee.com/zhang-xinyou/bluff) 和 [GitHub](https://github.com/zhangxinyou-cameron/bluff)。
 
+牌桌使用河纹牌背与分段嵌边筹码。底池筹码图标不代表面额，以旁边的数字为准。梭哈时筹码会推向底池；开启操作系统的「减少动态效果」即可关闭该动画。
+
 ## 双仓库更新
 
 本地统一在 `master` 开发，提交并更新 `CHANGELOG.md` 后运行：

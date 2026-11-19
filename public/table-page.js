@@ -274,6 +274,9 @@ function compactAction(record) {
   return {name:names[record.action]??record.label,amount:null};
 }
 
+const chipNumbers=new Intl.NumberFormat('zh-CN');
+function chipAmount(amount){return chipNumbers.format(amount);}
+
 function raiseSliderSpec(game,player) {
   const step=Math.max(1,Math.floor(game.smallBlind??game.bigBlind/2));
   const min=Math.ceil((game.currentBet+game.minRaise)/step)*step;
@@ -286,8 +289,8 @@ function renderGame(g) {
   const myPosition=g.players.find(p=>p.id===mySeatId)?.position;
   document.getElementById('handNum').textContent = `第${g.handNumber}局${myPosition?' · '+myPosition.label:''}`;
   document.getElementById('phaseText').textContent = PHASE_NAMES[g.phase]||'';
-  document.getElementById('potText').textContent = `底池: ${g.pot}`;
-  document.getElementById('potDisplay').textContent = `底池 ${g.pot}`;
+  document.getElementById('potText').textContent = `底池: ${chipAmount(g.pot)}`;
+  document.getElementById('potAmount').textContent = chipAmount(g.pot);
 
   let ccHtml = '';
   g.communityCards.forEach(c => ccHtml += fmtCard(c));
@@ -309,15 +312,15 @@ function renderGame(g) {
     if (idx === g.dealerIndex) html += `<div class="dealer-btn">庄</div>`;
     if(p.id===mySeatId)html+='<span class="self-seat-label">你</span>';
     const position=p.position;
-    html += `<div class="player-name">${typeof RiverAvatars!=='undefined'?RiverAvatars.markup(p.avatar,p.name):`<span class="player-avatar" data-avatar="default">${p.isAI?'🤖':'♠'}</span>`}<span class="player-label" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span></div><div class="player-chips">${position?`<span class="player-position" title="${escapeHtml(position.description)} · 翻前第${position.preflop}位 / 翻后第${position.postflop}位">${escapeHtml(position.label)}</span>`:''}<span>💰${p.chips}</span></div>`;
+    html += `<div class="player-name">${typeof RiverAvatars!=='undefined'?RiverAvatars.markup(p.avatar,p.name):`<span class="player-avatar" data-avatar="default">${p.isAI?'🤖':'♠'}</span>`}<span class="player-label" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>${position?`<span class="player-position" title="${escapeHtml(position.description)} · 翻前第${position.preflop}位 / 翻后第${position.postflop}位">${escapeHtml(position.label)}</span>`:''}</div><div class="player-chips"><strong aria-label="余额 ${chipAmount(p.chips)}">${chipAmount(p.chips)}</strong></div>`;
     const currentAction=p.lastAction?.hand===g.handNumber&&p.lastAction.phase===g.phase?p.lastAction:null;
     const summary=currentAction&&compactAction(currentAction);
     const actionText=summary?.name||(p.folded?'已弃牌':p.allIn?'已梭哈':!p.isActive?'本手旁观':'尚未行动');
     const offline=p.connected===false?' · 暂离':'';
     const hasAmount=summary?.amount!=null;
-    const actionContent=hasAmount?`<span class="player-action-name">${escapeHtml(actionText+offline)}</span> <strong class="player-action-amount">${summary.amount}</strong>`:escapeHtml(actionText+offline);
+    const actionContent=hasAmount?`<span class="player-action-name">${escapeHtml(actionText)}</span> <strong class="player-action-amount">${chipAmount(summary.amount)}</strong>`:escapeHtml(actionText+offline);
     html += `<div class="player-action move-${escapeHtml(currentAction?.action||'waiting')}${hasAmount?' has-amount':''}" title="${escapeHtml((currentAction?.label||actionText)+offline)}">${actionContent}</div>`;
-    if (p.currentBet>0) html += `<div class="player-bet">贡献:${p.currentBet}</div>`;
+    if(p.currentBet>0&&p.currentBet!==summary?.amount) html+=`<div class="player-bet">本轮 <strong>${chipAmount(p.currentBet)}</strong></div>`;
     html += `<div class="hole-cards">${cardsHtml}</div>${p.privateReveal&&p.id!==mySeatId?'<span class="private-card-note">仅向你亮牌</span>':''}</div>`;
     seatHtml.set(p.id,html);
   });
@@ -396,9 +399,9 @@ function renderGame(g) {
 
   let html = `<div class="action-row betting-actions">`;
   if (canCheck) html += `<button class="action-btn action-check" onclick="playerAction('check')">过牌</button>`;
-  else html += `<button class="action-btn action-call" onclick="playerAction('call')">跟注 ${Math.min(need,cp.chips)}</button>`;
-  if (canRaise) html += `<button class="action-btn action-raise" onclick="startRaise()">${(g.betLevel||0)+1}-BET · 加注至 ${g.currentBet+g.minRaise}</button>`;
-  if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" onclick="playerAction('allin')">梭哈 ${cp.chips}</button>`;
+  else html += `<button class="action-btn action-call" onclick="playerAction('call')">跟注 <strong>${chipAmount(Math.min(need,cp.chips))}</strong></button>`;
+  if (canRaise) html += `<button class="action-btn action-raise" onclick="startRaise()">加注 <small>${(g.betLevel||0)+1}-BET · 至 ${chipAmount(g.currentBet+g.minRaise)}</small></button>`;
+  if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" onclick="playerAction('allin')">梭哈 <strong>${chipAmount(cp.chips)}</strong></button>`;
   html += `<button class="action-btn action-fold" aria-haspopup="dialog" onclick="playerAction('fold')">弃牌</button></div>`;
   panel.innerHTML = html;
   document.getElementById('actionHint').textContent = `轮到你了`;

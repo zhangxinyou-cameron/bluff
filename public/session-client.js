@@ -57,6 +57,9 @@
   function snapshot(data){
     if(data.version<lastVersion)return;
     const previous=lastSnapshot?.game;
+    const liveActions=wsConnected&&lastSnapshot?.roomCode===data.roomCode&&previous&&previous.handNumber===data.game?.handNumber&&!document.hidden
+      ?(data.events||[]).filter(event=>event.kind==='action'&&event.hand===previous.handNumber&&!seen.has(event.id)&&data.serverTime-event.time<2000)
+      :[];
     if(data.game&&(data.game.handNumber!==previous?.handNumber||!PokerEngine.betting(data.game)||data.game.players[data.game.currentPlayerIndex]?.id!==data.seatId))raiseMode=false;
     lastVersion=data.version;lastSnapshot=data;clockOffset=data.serverTime-Date.now();wsConnected=true;retry=0;
     isHost=data.isHost;mySeatId=data.seatId;roomCode=data.roomCode;sequence=Math.max(sequence,data.commandSeq||0);save();
@@ -68,6 +71,10 @@
     if(pending&&Date.now()-pending.at>6000){const received=(data.commandSeq||0)>=pending.commandSeq;pending=null;bankPending=false;actionPending=false;status(received?'已核对最新状态，请按当前牌局继续':'上次操作未到达服务器，请根据当前状态重新操作','ok');}
     if(!data.paused&&Date.now()>warningUntil)status('连接正常 · 服务器托管牌局，后台返回可自动恢复','ok');
     paint(true);
+    if(!wsConnected)return;
+    const bet=liveActions.filter(event=>event.betLevel>=2).at(-1);
+    if(bet)updateBetNotice(bet);
+    for(const event of liveActions)if(event.shoved)pushChips(event.seatId);
   }
   function paint(force=false){
     if(rendering)return;rendering=true;
@@ -81,7 +88,7 @@
     const notice=node('betNotice');
     const level=event?.betLevel??Number(event?.label?.match(/^(\d+)-BET/)?.[1]);
     const elapsed=now()-(event?.time??0);
-    if(!(level>=2)||elapsed>=2000){notice.hidden=true;return;}
+    if(!(level>=2)||elapsed>=2000)return;
     const key=`${lastSnapshot.roomCode}-${event.id}`;
     if(notice.dataset.event===key)return;
     clearTimeout(betNoticeTimer);
@@ -94,6 +101,31 @@
       notice.animate?.([{opacity:1},{opacity:1,offset:.6},{opacity:0}],{duration,fill:'both'});
     }
     betNoticeTimer=setTimeout(()=>{notice.hidden=true;},duration);
+  }
+  function pushChips(seatId){
+    if(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||typeof Element.prototype.animate!=='function')return;
+    const layer=node('chipFlightLayer');
+    const seat=layer.parentElement.querySelector(`[data-seat="${seatId}"]`);
+    const target=node('potDisplay').querySelector('.river-chip-stack');
+    if(!seat?.getClientRects().length||!target?.getClientRects().length)return;
+    const area=layer.getBoundingClientRect(),from=seat.getBoundingClientRect(),to=target.getBoundingClientRect();
+    const endX=to.left+to.width/2-area.left,endY=to.top+to.height/2-area.top;
+    const startX=from.left+from.width/2-area.left;
+    const startY=(from.top+from.height/2<to.top?from.bottom+6:from.top-6)-area.top;
+    const flight=document.createElement('span');
+    flight.className='river-chip-stack chip-flight';
+    flight.style.left=`${startX}px`;flight.style.top=`${startY}px`;
+    for(const chip of target.children)flight.append(chip.cloneNode());
+    layer.append(flight);
+    const dx=endX-startX,dy=endY-startY;
+    const at=(fraction,scale)=>`translate(-50%, -50%) translate(${dx*fraction}px,${dy*fraction}px) scale(${scale})`;
+    const animation=flight.animate([
+      {transform:at(0,.8),opacity:0},
+      {transform:at(.12,1),opacity:1,offset:.16},
+      {transform:at(.93,1),opacity:1,offset:.62},
+      {transform:at(1,.72),opacity:0}
+    ],{duration:750,easing:'ease-out',fill:'both'});
+    animation.onfinish=animation.oncancel=()=>flight.remove();
   }
   function updateBankPrompt(state, locked){
     const dialog=node('bankDialog');
@@ -205,7 +237,6 @@
     const last=events.filter(event=>event.kind==='action'&&event.hand===state.handNumber&&event.street===state.phase).at(-1);
     const summary=last&&compactAction(last);
     node('actionAnnouncementText').textContent=summary?`${last.name} ${last.automatic?'超时自动 ':''}${summary.name}${summary.amount===null?'':' '+summary.amount}`:`第 ${state.handNumber} 手 · ${PHASE_NAMES[state.phase]||'本轮'} · 等待行动`;
-    updateBetNotice(last);
     node('actionAnnouncement').dataset.action=last?.action||'deal';
     if(presentation?.timeline&&remaining>0){const count=state.communityCards.length,board=state.runoutBoards?.length||1,showingHands=now()-presentation.startedAt<presentation.timeline.showHandsMs;node('phaseText').textContent=showingHands?'亮牌展示':'梭哈跑马';node('actionAnnouncementText').textContent=showingHands?'争池玩家手牌已亮 · 先看牌再跑马':`${presentation.timeline.boardCount>1?'第 '+board+' 组 · ':''}${count>=5?'河牌已开 · 停留看牌':count===4?'转牌已开':count===3?'翻牌已开':'等待翻牌'} · 慢慢揭晓`;}
     if(data.paused)status('异常检测已暂停牌局以保护筹码，请联系房主检查','error');
