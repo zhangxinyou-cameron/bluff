@@ -6,6 +6,8 @@
 
 牌桌使用河纹牌背与分段嵌边筹码。底池筹码图标不代表面额，以旁边的数字为准。梭哈时筹码会推向底池；开启操作系统的「减少动态效果」即可关闭该动画。
 
+牌背图案内嵌在主题样式中，首次发牌无需再请求图片。更换 `public/assets/river-card-back.svg` 时须同步更新 `public/river-theme.css` 的 `--river-back`；回归检查运行 `node tests/card-back-browser.js`。
+
 ## 双仓库更新
 
 本地统一在 `master` 开发，提交并更新 `CHANGELOG.md` 后运行：
