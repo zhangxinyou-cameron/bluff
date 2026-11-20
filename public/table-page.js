@@ -401,7 +401,7 @@ function renderGame(g) {
   if (canCheck) html += `<button class="action-btn action-check" onclick="playerAction('check')">过牌</button>`;
   else html += `<button class="action-btn action-call" onclick="playerAction('call')">跟注 <strong>${chipAmount(Math.min(need,cp.chips))}</strong></button>`;
   if (canRaise) html += `<button class="action-btn action-raise" onclick="startRaise()">加注 <small>${(g.betLevel||0)+1}-BET · 至 ${chipAmount(g.currentBet+g.minRaise)}</small></button>`;
-  if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" onclick="playerAction('allin')">梭哈 <strong>${chipAmount(cp.chips)}</strong></button>`;
+  if (raiseAllowed || cp.chips+cp.currentBet<=g.currentBet) html += `<button class="action-btn action-allin" aria-haspopup="dialog" onclick="playerAction('allin')">梭哈 <strong>${chipAmount(cp.chips)}</strong></button>`;
   html += `<button class="action-btn action-fold" aria-haspopup="dialog" onclick="playerAction('fold')">弃牌</button></div>`;
   panel.innerHTML = html;
   document.getElementById('actionHint').textContent = `轮到你了`;

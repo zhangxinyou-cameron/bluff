@@ -182,6 +182,7 @@ async function main() {
       const page = group[ids.indexOf(seat)];
       await page.locator('.action-' + action).click();
       if (action === 'fold') await page.locator('#foldConfirm').click();
+      if (action === 'allin') await page.locator('#allinConfirm').click();
       await tableHost.waitForFunction(revision => g.revision > revision, before);
     }
     async function finish(tableHost = host) {

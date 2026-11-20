@@ -44,6 +44,14 @@
     <button id="foldConfirm" type="button" class="action-btn">确认弃牌</button>
   </div>
 </dialog>
+<dialog id="allinDialog" class="fold-dialog" aria-labelledby="allinTitle" aria-describedby="allinHint">
+  <h2 id="allinTitle">确认梭哈？</h2>
+  <p id="allinHint">本次将投入剩余的 <strong id="allinAmount"></strong> 筹码。</p>
+  <div class="fold-dialog-actions">
+    <button id="allinCancel" type="button" class="action-btn" autofocus>取消</button>
+    <button id="allinConfirm" type="button" class="action-btn">确认梭哈</button>
+  </div>
+</dialog>
 <section id="sessionToolbar" class="session-toolbar" hidden aria-label="本场规则和银行">
   <div><span class="panel-kicker" id="sessionMode"></span><span id="sessionStatus" class="session-status" role="status"></span><button id="inviteTableBtn" class="sound-button" onclick="copyTableInvite()">邀请入桌</button></div>
   <div class="session-actions"><label class="mode-control">牌制 <select id="tableDeckMode" class="mini-select" onchange="RiverTable.setMode(this.value)"><option value="auto">自动人数</option><option value="short">36张短牌</option><option value="standard">52张标准</option></select></label><label class="mode-control">底注规则 <select id="tableBlindMode" class="mini-select" onchange="RiverTable.setBlinds(this.value)" title="可选全员底注，或庄家左手第一位1倍、第二位半倍"><option value="auto">默认：随牌制</option><option value="ante">全员底注＋庄家盲注</option><option value="position">下家1倍 / 下下家半倍</option></select></label><button id="avatarBtn" class="sound-button" onclick="RiverTable.openAvatar()" aria-haspopup="dialog">我的头像</button><button id="managePlayersBtn" class="sound-button" onclick="RiverTable.open()">玩家管理</button><button id="bankBtn" class="sound-button" onclick="openBank()" aria-haspopup="dialog">银行</button><button id="finishSessionBtn" class="sound-button" onclick="finishSession()">结算整局</button><button id="closeRoomBtn" class="sound-button" onclick="RiverSession.command('closeRoom')">关闭房间</button><button id="awayBtn" class="sound-button" onclick="RiverSession.leave({permanent:true})">退出本场</button></div>

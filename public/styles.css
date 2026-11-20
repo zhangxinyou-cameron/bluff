@@ -165,6 +165,9 @@ input::placeholder { color: #819087; }
 .fold-dialog-actions button { grid-row:1; min-height:44px; }
 #foldCancel { grid-column:2; background:#537348; border-color:#779365; }
 #foldConfirm { grid-column:1; background:#26372e; color:#f4d2bf; border-color:#9e7761; }
+#allinCancel { grid-column:1; background:#26372e; border-color:#748477; }
+#allinConfirm { grid-column:2; background:#784936; border-color:#b48663; color:#fff0d7; }
+#allinAmount { color:var(--ink); font-variant-numeric:tabular-nums; }
 .action-raise { background: var(--gold); color: #20311d; border-color: var(--gold); }
 .action-allin { background: #784936; border-color: #9f6c4c; color: #f6dfbe; }
 .raise-slider { border-radius: 8px; padding: 15px; background: #1d3025; border: 1px solid var(--line); }

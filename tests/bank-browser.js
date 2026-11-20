@@ -65,7 +65,9 @@ const {passwordRecord}=require('../access');
           const actor=state.players[state.currentPlayerIndex],page=pages[actor.id];
           await page.waitForFunction(revision=>(isHost?g:clientGameState)?.revision===revision&&!!document.querySelector('#actionPanel button')&&!RiverSession.getDiagnostics().pending,state.revision);
           const selector=(hand===2||hand===4)&&await page.locator('.action-allin').count()?'.action-allin':await page.locator('.action-check').count()?'.action-check':'.action-call';
-          await page.locator(selector).click();await host.waitForFunction(revision=>g.revision>revision,state.revision);
+          await page.locator(selector).click();
+          if(selector==='.action-allin')await page.locator('#allinConfirm').click();
+          await host.waitForFunction(revision=>g.revision>revision,state.revision);
         }
         totalActions+=actions;
         const state=await snapshot(host);balanced(state,count);brokeSeen||=state.players.some(p=>p.chips===0);

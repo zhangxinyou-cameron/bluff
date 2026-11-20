@@ -12,7 +12,28 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
       window.shoveFlights=0;
       new MutationObserver(records=>{window.shoveFlights+=records.reduce((count,record)=>count+record.addedNodes.length,0);}).observe(layer,{childList:true});
     });
-    await host.locator('#startBtn').click();await guest.locator('.action-allin').filter({hasText:'梭哈'}).waitFor();await guest.locator('.action-raise').click();assert.equal(await guest.locator('#raiseMaxBtn').textContent(),'梭哈');await guest.locator('.action-cancel').click();await guest.locator('.action-allin').click();await idle(guest);assert.match(room.history.find(e=>e.action==='allin').label,/梭哈/);
+    await host.locator('#startBtn').click();
+    const shove=guest.locator('.action-allin'),dialog=guest.locator('#allinDialog');
+    await shove.waitFor();
+    const actor=room.game.players[room.game.currentPlayerIndex],revision=room.game.revision,stack=actor.chips;
+    await shove.click();await dialog.waitFor();
+    assert.equal(await guest.locator('#allinAmount').textContent(),stack.toLocaleString('zh-CN'));
+    assert.equal(await guest.locator('#allinCancel').evaluate(button=>document.activeElement===button),true);
+    assert.equal(room.game.revision,revision);
+    await guest.locator('#allinCancel').click();await dialog.waitFor({state:'hidden'});
+    assert.equal(room.game.revision,revision);
+    await guest.locator('.action-raise').click();
+    await guest.locator('#raiseMaxBtn').click();
+    await guest.locator('.action-confirm').click();await dialog.waitFor();
+    assert.equal(room.game.revision,revision);
+    await guest.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+    assert.equal(await guest.locator('#raiseAmount').inputValue(),String(stack+actor.currentBet));
+    await guest.locator('.action-confirm').click();await dialog.waitFor();
+    await guest.locator('#allinConfirm').click();await idle(guest);
+    const confirmed=room.history.filter(event=>event.kind==='action'&&event.shoved);
+    assert.equal(confirmed.length,1);
+    assert.equal(confirmed[0].action,'raise');
+    assert.equal(confirmed[0].amount,stack);
     for(const page of pages){
       await page.waitForFunction(()=>window.shoveFlights===1);
       await page.locator('.chip-flight').waitFor({state:'detached'});
@@ -37,6 +58,15 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
         if(page===guest&&(width===390||width===1280))await page.screenshot({path:path.join(directory,`shove-clear-cards-${n}-${width}.png`)});
       }}roomManager.check(room);
     }
-    assert.deepEqual(errors,[]);console.log('Shove UI passed: 2 clients, explicit shove and call for entire stack, resync, reduced motion, and 3/8-seat double boards at 6 widths.');
+    const expiryHost=await open(),expiryCode=await expiryHost.locator('#displayRoomCode').textContent(),expiryGuest=await open(expiryCode),expiryRoom=roomManager.games.get(expiryCode);
+    await expiryHost.locator('#startBtn').click();
+    await expiryGuest.locator('.action-allin').click();
+    await expiryGuest.locator('#allinDialog').waitFor();
+    expiryRoom.deadline=Date.now()-1;roomManager.tick();
+    await expiryGuest.locator('#allinDialog').waitFor({state:'hidden'});
+    await expiryGuest.locator('#allinConfirm').evaluate(button=>button.click());
+    assert.equal(expiryRoom.history.some(event=>event.shoved),false);
+    assert.equal(expiryRoom.history.some(event=>event.kind==='action'&&event.automatic),true);
+    assert.deepEqual(errors,[]);console.log('Shove UI passed: cancel and Escape, full-stack raise confirmation, stale-turn rejection, both clients see animation, reduced motion, and double-board layouts.');
   }finally{await browser.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

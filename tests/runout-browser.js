@@ -15,7 +15,7 @@ const {server,wss,access,roomManager}=require('../server'),{passwordRecord}=requ
     const events=traces.get(page).flatMap(message=>message.events||[]).filter(event=>event.hand===hand);
     return [...new Map(events.map(event=>[event.id,event])).values()];
   }
-  async function act(action){const g=room.game,actor=pages[g.players[g.currentPlayerIndex].id],rev=g.revision;await actor.locator('.action-'+action).waitFor();await actor.locator('.action-'+action).click();await idle(actor);await host.waitForFunction(rev=>g.revision>rev,rev);}
+  async function act(action){const g=room.game,actor=pages[g.players[g.currentPlayerIndex].id],rev=g.revision;await actor.locator('.action-'+action).waitFor();await actor.locator('.action-'+action).click();if(action==='allin')await actor.locator('#allinConfirm').click();await idle(actor);await host.waitForFunction(rev=>g.revision>rev,rev);}
   async function raise(multiple,level){
     const g=room.game,id=g.players[g.currentPlayerIndex].id,page=pages[id],rev=g.revision,amount=g.currentBet*multiple;
     await page.locator('.action-raise').filter({hasText:level+'-BET'}).waitFor();await page.locator('.action-raise').click();

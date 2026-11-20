@@ -15,6 +15,7 @@ const {chromium}=require('playwright');const{server,wss,access,roomManager}=requ
     await page.waitForFunction(rev=>(isHost?g:clientGameState)?.revision===rev&&!!document.querySelector('#actionPanel button'),revision);
     const selector=kind||((await page.locator('.action-check').count())?'check':'call');await page.locator('.action-'+selector).click();
     if(selector==='fold')await page.locator('#foldConfirm').click();
+    if(selector==='allin')await page.locator('#allinConfirm').click();
     await host.waitForFunction(rev=>g.revision>rev,revision);await idle(page);
   }
   async function finish(mode='normal'){

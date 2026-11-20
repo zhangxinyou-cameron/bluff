@@ -140,12 +140,12 @@
     source.start();
   }
   function soundFor(target) {
-    if(target.matches('#bankBorrowBtn, #bankRepayBtn')) return 'chips';
+    if(target.matches('#bankBorrowBtn, #bankRepayBtn, #allinConfirm')) return 'chips';
     if (target.matches('#startBtn, #nextHandBtn, .action-next')) return 'deal';
     if (target.matches('#readyBtn, #confirmJoinBtn, .action-confirm')) return 'ready';
     if (target.matches('#foldConfirm, .action-cancel')) return 'fold';
     if (target.matches('#leaveBtn')) return 'leave';
-    if (target.matches('.action-raise, .action-call, .action-allin')) return 'chips';
+    if (target.matches('.action-raise, .action-call')) return 'chips';
     return 'tap';
   }
   // Capture delegates include buttons created later by the game renderer.

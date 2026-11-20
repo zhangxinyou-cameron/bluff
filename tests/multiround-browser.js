@@ -61,6 +61,7 @@ const { passwordRecord } = require('../access');
           const before = JSON.stringify(game);
           if (hand === 6 && actions === 1) {
             await page.locator('.action-allin').click();
+            await page.locator('#allinConfirm').click();
           } else if (hand%3 === 2 && actions === 1) {
             await page.locator('.action-raise').click();
             await page.locator('.action-confirm').click();
